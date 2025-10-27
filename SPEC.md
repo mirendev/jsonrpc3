@@ -503,6 +503,259 @@ JSON-RPC 3.0 defines additional error codes for reference-related errors:
 }
 ```
 
+### 3.4. Protocol Methods
+
+JSON-RPC 3.0 defines a special reserved reference `"$rpc"` that provides access to protocol-level operations. These methods allow explicit management of references and session information.
+
+#### 3.4.1. The `$rpc` Magic Reference
+
+The reference identifier `"$rpc"` is reserved for protocol operations. It MUST NOT be used as a user-defined reference identifier. When a request includes `"ref": "$rpc"`, the method is invoked on the protocol handler rather than on a user-defined object.
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "session_id",
+  "id": 1
+}
+```
+
+#### 3.4.2. Optional Protocol Methods
+
+All protocol methods are OPTIONAL to implement. If a server or client does not support a protocol method, it MUST return a Method not found error (code -32601).
+
+##### 3.4.2.1. `dispose`
+
+Explicitly disposes of a reference, freeing associated resources immediately rather than waiting for session cleanup.
+
+**Parameters:**
+- `ref` (string, required): The reference identifier to dispose
+
+**Returns:** `null` on success
+
+**Example - Client disposing server reference:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "dispose",
+  "params": {"ref": "db-connection-1"},
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": null,
+  "id": 1
+}
+```
+
+**Example - Server disposing client reference:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "dispose",
+  "params": {"ref": "client-callback-1"},
+  "id": "srv-100"
+}
+```
+
+If the reference has already been disposed or never existed, the server SHOULD return a Reference not found error (-32002).
+
+##### 3.4.2.2. `session_id`
+
+Retrieves the current session identifier. Useful for debugging, logging, and correlation across multiple connections.
+
+**Parameters:** None
+
+**Returns:** An object containing session information
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "session_id",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "sessionId": "550e8400-e29b-41d4-a716-446655440000",
+    "createdAt": "2025-10-27T10:30:00Z"
+  },
+  "id": 1
+}
+```
+
+The format of the session identifier and additional fields in the result are implementation-defined.
+
+##### 3.4.2.3. `list_refs`
+
+Lists all active references in the current session. Useful for debugging, monitoring, and resource tracking.
+
+**Parameters:** None
+
+**Returns:** An object containing arrays of references by direction
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "list_refs",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "local": [
+      {"ref": "db-1", "type": "database", "created": "2025-10-27T10:30:00Z"},
+      {"ref": "conn-123", "type": "connection", "created": "2025-10-27T10:30:05Z"}
+    ],
+    "remote": [
+      {"ref": "client-callback-1", "created": "2025-10-27T10:30:02Z"}
+    ]
+  },
+  "id": 1
+}
+```
+
+The structure and fields in the result are implementation-defined. Implementations MAY include:
+- `local`: References to objects controlled by the responding party
+- `remote`: References to objects controlled by the requesting party
+- Additional metadata like type, creation time, last accessed, etc.
+
+##### 3.4.2.4. `dispose_all`
+
+Disposes all references in the current session. Useful for cleanup scenarios, testing, or when a client wants to reset its state without closing the connection.
+
+**Parameters:** None
+
+**Returns:** An object containing disposal statistics
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "dispose_all",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "disposed": 5,
+    "localDisposed": 3,
+    "remoteDisposed": 2
+  },
+  "id": 1
+}
+```
+
+**Important:** `dispose_all` disposes references controlled by BOTH parties:
+- Local references (objects you control)
+- Remote references (objects the other party passed to you)
+
+After calling `dispose_all`, the session continues but with no active references.
+
+##### 3.4.2.5. `ref_info`
+
+Retrieves information about a specific reference. Returns the same type of information as `list_refs`, but for a single reference.
+
+**Parameters:**
+- `ref` (string, required): The reference identifier to query
+
+**Returns:** An object containing reference information
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "ref_info",
+  "params": {"ref": "db-connection-1"},
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "ref": "db-connection-1",
+    "type": "database-connection",
+    "direction": "local",
+    "created": "2025-10-27T10:30:00Z",
+    "lastAccessed": "2025-10-27T10:35:12Z"
+  },
+  "id": 1
+}
+```
+
+The structure and fields in the result are implementation-defined. Implementations MAY include:
+- `ref`: The reference identifier
+- `type`: The type or class of the referenced object
+- `direction`: Whether this is a "local" (controlled by responder) or "remote" (controlled by requester) reference
+- `created`: Timestamp when the reference was created
+- `lastAccessed`: Timestamp of last use
+- Additional metadata specific to the referenced object
+
+If the reference does not exist or has been disposed, the server MUST return a Reference not found error (-32002):
+
+**Example - Reference not found:**
+```json
+{
+  "jsonrpc": "3.0",
+  "error": {
+    "code": -32002,
+    "message": "Reference not found",
+    "data": "Reference 'db-connection-1' does not exist or has been disposed"
+  },
+  "id": 1
+}
+```
+
+#### 3.4.3. Security Considerations
+
+Implementations SHOULD consider the following security implications of protocol methods:
+
+1. **Authorization**: Should all clients be allowed to call protocol methods? Consider restricting `list_refs` and `ref_info` in production environments.
+
+2. **Disposal permissions**: The `dispose` method allows either party to dispose references. Implementations MAY restrict who can dispose which references, but the default behavior allows both parties to explicitly release resources.
+
+3. **Information disclosure**: `list_refs`, `ref_info`, and `session_id` may expose information useful to attackers. Implementations MAY require special permissions or disable these methods in production.
+
+4. **Denial of service**: `dispose_all` could be used to disrupt service by clearing all references. Implementations MAY rate-limit or require authentication for this method.
+
+#### 3.4.4. Implementation Notes
+
+- Protocol methods are independent of the JSON-RPC version negotiation. They can be used with both `"jsonrpc": "2.0"` and `"jsonrpc": "3.0"` requests (though references are only meaningful in 3.0).
+
+- Implementations MAY provide additional protocol methods beyond those defined here. Custom protocol methods SHOULD be documented clearly.
+
+- The `$rpc` reference does not appear in `list_refs` results—it is always implicitly available.
+
+- Protocol methods MUST be safe to call from either party (client or server) in bidirectional connections.
+
 ## 4. Complete Examples
 
 ### 4.1. Server Returns Object Reference
@@ -822,6 +1075,191 @@ Note: This demonstrates both reference mechanisms:
 }
 ```
 
+### 4.5. Protocol Methods Example
+
+**Scenario**: Client uses protocol methods for debugging and resource management.
+
+**Step 1 - Client requests session ID:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "session_id",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "sessionId": "a3f2c891-5b44-4d2e-9a12-8c7f3e6d1b4a",
+    "createdAt": "2025-10-27T15:00:00Z"
+  },
+  "id": 1
+}
+```
+
+**Step 2 - Client creates multiple resources:**
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "openDatabase",
+  "params": {"name": "users"},
+  "id": 2
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {"$ref": "db-1"},
+  "id": 2
+}
+```
+
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "openDatabase",
+  "params": {"name": "products"},
+  "id": 3
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {"$ref": "db-2"},
+  "id": 3
+}
+```
+
+**Step 3 - Client lists all active references:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "list_refs",
+  "id": 4
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "local": [
+      {"ref": "db-1", "type": "database", "created": "2025-10-27T15:00:05Z"},
+      {"ref": "db-2", "type": "database", "created": "2025-10-27T15:00:08Z"}
+    ],
+    "remote": []
+  },
+  "id": 4
+}
+```
+
+**Step 4 - Client gets detailed info about a specific reference:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "ref_info",
+  "params": {"ref": "db-1"},
+  "id": 5
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "ref": "db-1",
+    "type": "database",
+    "direction": "local",
+    "created": "2025-10-27T15:00:05Z",
+    "lastAccessed": "2025-10-27T15:00:10Z",
+    "metadata": {
+      "databaseName": "users",
+      "connectionCount": 1
+    }
+  },
+  "id": 5
+}
+```
+
+**Step 5 - Client explicitly disposes one reference:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "dispose",
+  "params": {"ref": "db-1"},
+  "id": 6
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": null,
+  "id": 6
+}
+```
+
+**Step 6 - Client verifies reference was disposed:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "list_refs",
+  "id": 7
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "local": [
+      {"ref": "db-2", "type": "database", "created": "2025-10-27T15:00:08Z"}
+    ],
+    "remote": []
+  },
+  "id": 7
+}
+```
+
+**Step 7 - Client disposes all remaining references:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "dispose_all",
+  "id": 8
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "disposed": 1,
+    "localDisposed": 1,
+    "remoteDisposed": 0
+  },
+  "id": 8
+}
+```
+
 ## 5. Compatibility and Implementation Notes
 
 ### 5.1. Backward Compatibility
@@ -943,6 +1381,7 @@ Where:
 - `ref` (optional, top-level): Specifies a remote reference to invoke the method on. This is the ONLY place where remote references can be specified. If present, the method is invoked on the referenced object controlled by the other party.
 - `LocalReference` (as `{$ref: string}`): Used in `params` or `result` to pass references to objects controlled by the caller. These are references being passed from caller to callee.
 - Reference identifiers (both in `ref` and `LocalReference`) MUST be non-empty strings and MUST be unique within the session for references created by the same party
+- The reference identifier `"$rpc"` is reserved for protocol methods (see section 3.4) and MUST NOT be used as a user-defined reference
 - `LocalReference` objects MUST only have a single `$ref` member (no additional properties)
 
 ## 7. Conclusion
