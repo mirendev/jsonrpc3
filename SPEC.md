@@ -734,15 +734,65 @@ If the reference does not exist or has been disposed, the server MUST return a R
 }
 ```
 
+##### 3.4.2.6. `mimetypes`
+
+Retrieves the list of MIME types (encodings) supported by the server. This is useful for content negotiation in transport-agnostic scenarios where HTTP headers are not available.
+
+**Parameters:** None
+
+**Returns:** An array of supported MIME type strings, ordered by server preference
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "mimetypes",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": [
+    "application/cbor-compact",
+    "application/cbor",
+    "application/json"
+  ],
+  "id": 1
+}
+```
+
+**Interpretation:**
+- The array is ordered by server preference (most preferred first)
+- `application/json` SHOULD always be included for maximum compatibility
+- Clients can use this information to select the optimal encoding for subsequent requests
+- The first supported encoding in the list that the client also supports is recommended
+
+**Example with limited support:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": [
+    "application/json"
+  ],
+  "id": 1
+}
+```
+
+This response indicates the server only supports JSON encoding.
+
 #### 3.4.3. Security Considerations
 
 Implementations SHOULD consider the following security implications of protocol methods:
 
-1. **Authorization**: Should all clients be allowed to call protocol methods? Consider restricting `list_refs` and `ref_info` in production environments.
+1. **Authorization**: Should all clients be allowed to call protocol methods? Consider restricting `list_refs`, `ref_info`, and `mimetypes` in production environments.
 
 2. **Disposal permissions**: The `dispose` method allows either party to dispose references. Implementations MAY restrict who can dispose which references, but the default behavior allows both parties to explicitly release resources.
 
-3. **Information disclosure**: `list_refs`, `ref_info`, and `session_id` may expose information useful to attackers. Implementations MAY require special permissions or disable these methods in production.
+3. **Information disclosure**: `list_refs`, `ref_info`, `session_id`, and `mimetypes` may expose implementation details useful to attackers. Implementations MAY require special permissions or disable these methods in production.
 
 4. **Denial of service**: `dispose_all` could be used to disrupt service by clearing all references. Implementations MAY rate-limit or require authentication for this method.
 
@@ -1345,6 +1395,269 @@ Implementations MAY provide additional features beyond this specification:
 - **Weak references**: References that don't prevent object cleanup and may become invalid even during a session
 
 These extensions SHOULD be clearly documented and SHOULD NOT break compatibility with implementations that only support the core specification.
+
+### 5.6. CBOR Encoding
+
+JSON-RPC 3.0 supports CBOR (Concise Binary Object Representation, RFC 8949) as an alternative encoding to JSON. CBOR provides more compact representation and efficient binary encoding while maintaining the same semantic structure.
+
+#### 5.6.1. Encoding Selection
+
+The encoding format is determined by the MIME type (Content-Type) used for the message:
+
+- **`application/json`** (default): Standard JSON encoding with string keys
+- **`application/cbor`**: CBOR encoding with string keys (same structure as JSON)
+- **`application/cbor-compact`**: CBOR encoding with integer keys for top-level message fields
+
+When no Content-Type is specified, `application/json` MUST be assumed. Implementations MAY support one, two, or all three encoding formats.
+
+#### 5.6.2. Standard CBOR Mode (`application/cbor`)
+
+In standard CBOR mode, messages are encoded exactly as they would be in JSON, but using CBOR binary format. All top-level keys remain as strings. This mode provides a drop-in replacement for JSON with better performance and smaller size while maintaining readability in debugging tools.
+
+**Example Request (conceptual):**
+```
+Request with string keys in CBOR:
+{
+  "jsonrpc": "3.0",
+  "method": "add",
+  "params": [1, 2],
+  "id": 1
+}
+```
+
+#### 5.6.3. Compact CBOR Mode (`application/cbor-compact`)
+
+In compact CBOR mode, top-level message fields use integer keys instead of strings for maximum efficiency. This mode is suitable for bandwidth-constrained or high-performance scenarios.
+
+**Integer Key Mapping:**
+
+| Field | Integer Key | Used In | Notes |
+|-------|-------------|---------|-------|
+| `jsonrpc` | 0 | Request, Response | Protocol version |
+| `id` | 1 | Request, Response | Request/response correlation |
+| `method` | 2 | Request | Method name |
+| `params` | 3 | Request | Method parameters |
+| `ref` | 4 | Request | Remote reference to invoke on |
+| `result` | 5 | Response | Success result |
+| `error` | 6 | Response | Error object |
+| `code` | 7 | Error | Error code |
+| `message` | 8 | Error | Error message |
+| `data` | 9 | Error | Additional error data |
+| `$ref` | 10 | LocalReference | Reference identifier |
+
+**Example Request in Compact Mode (conceptual):**
+```
+Compact CBOR request:
+{
+  0: "3.0",        // jsonrpc
+  2: "add",        // method
+  3: [1, 2],       // params
+  1: 1             // id
+}
+```
+
+**Example Response in Compact Mode (conceptual):**
+```
+Compact CBOR response:
+{
+  0: "3.0",        // jsonrpc
+  5: 3,            // result
+  1: 1             // id
+}
+```
+
+**Example Error Response in Compact Mode (conceptual):**
+```
+Compact CBOR error response:
+{
+  0: "3.0",                    // jsonrpc
+  6: {                         // error
+    7: -32601,                 // code
+    8: "Method not found",     // message
+    9: "add method not found"  // data
+  },
+  1: 1                         // id
+}
+```
+
+**Example LocalReference in Compact Mode (conceptual):**
+```
+Compact CBOR local reference:
+{
+  10: "db-connection-1"        // $ref
+}
+```
+
+#### 5.6.4. Nested Objects
+
+**Important**: The integer key mapping applies ONLY to the top-level fields of Request, Response, Error, and LocalReference objects. All nested objects (such as `params`, `result`, or custom data structures) continue to use their natural string keys, even in compact mode.
+
+For example, in compact mode:
+```
+{
+  0: "3.0",               // jsonrpc (integer key)
+  2: "openDatabase",      // method (integer key)
+  3: {                    // params (integer key)
+    "name": "mydb",       // nested: string key
+    "readonly": false     // nested: string key
+  },
+  1: 1                    // id (integer key)
+}
+```
+
+#### 5.6.5. Implementation Requirements
+
+- Implementations that support CBOR MUST support `application/cbor` mode
+- Support for `application/cbor-compact` is OPTIONAL
+- Implementations MUST correctly handle the Content-Type header (or equivalent mechanism) to determine encoding
+- When responding, implementations MUST use the same encoding as the request
+- If an implementation receives a Content-Type it does not support, it SHOULD return an error (code -32700, Parse error)
+
+#### 5.6.6. Batch Requests in CBOR
+
+Batch requests in CBOR mode follow the same structure as JSON: an array of Request/Notification objects. In compact mode, each request in the array uses integer keys, while the array itself remains a standard CBOR array.
+
+#### 5.6.7. Advantages of CBOR
+
+- **Size**: CBOR typically produces 20-50% smaller messages than JSON
+- **Speed**: Faster parsing and serialization than JSON
+- **Binary data**: Native support for binary data without base64 encoding
+- **Extensibility**: Supports additional data types (arbitrary precision numbers, tags, etc.)
+- **Compact mode**: Integer keys provide additional 10-20% size reduction for protocol overhead
+
+#### 5.6.8. Encoding Negotiation and Fallback
+
+Clients and servers must negotiate which encoding to use. The mechanism varies by transport.
+
+##### 5.6.8.1. HTTP Content Negotiation
+
+For HTTP-based transports, standard HTTP content negotiation mechanisms SHOULD be used:
+
+**Client Request Headers:**
+```
+Content-Type: application/cbor-compact
+Accept: application/cbor-compact, application/cbor;q=0.8, application/json;q=0.5
+```
+
+- **`Content-Type`**: Specifies the encoding of the request body
+- **`Accept`**: Specifies acceptable encodings for the response, with optional quality values (q)
+
+**Server Response Headers:**
+```
+Content-Type: application/cbor-compact
+```
+
+- The server MUST respond using an encoding specified in the client's `Accept` header
+- The server SHOULD use the highest quality encoding it supports
+
+**Using `Expect: 100-continue`:**
+
+For large request bodies, clients can use the `Expect` header to verify encoding support before sending the body:
+
+```
+POST /jsonrpc HTTP/1.1
+Content-Type: application/cbor-compact
+Content-Length: 50000
+Expect: 100-continue
+Accept: application/cbor-compact, application/cbor;q=0.8, application/json;q=0.5
+```
+
+**Server responses:**
+- `100 Continue`: Encoding is acceptable, client may send the request body
+- `417 Expectation Failed`: Encoding is not supported, client should retry with a different encoding
+- `415 Unsupported Media Type`: Content-Type is not supported
+
+##### 5.6.8.2. Transport-Agnostic Discovery
+
+For non-HTTP transports or when HTTP headers are not available, use the `$rpc.mimetypes` protocol method:
+
+**Step 1 - Discover supported encodings:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "mimetypes",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": [
+    "application/cbor-compact",
+    "application/cbor",
+    "application/json"
+  ],
+  "id": 1
+}
+```
+
+**Step 2 - Use preferred encoding for subsequent requests**
+
+The client can now select the best encoding from the intersection of what it supports and what the server supports.
+
+##### 5.6.8.3. Fallback Strategy
+
+When a server rejects an encoding, the client MUST implement the following fallback strategy:
+
+1. **First attempt**: Try `application/cbor-compact` (if client supports it)
+2. **Second attempt**: Fall back to `application/cbor` (if client supports it)
+3. **Final attempt**: Fall back to `application/json` (MUST be supported by all implementations)
+
+**Rejection Indicators:**
+- HTTP: `415 Unsupported Media Type` or `417 Expectation Failed`
+- JSON-RPC: Error code `-32700` (Parse error) with data indicating encoding issues
+- Connection closed or parse failure
+
+**Example Fallback Flow:**
+
+```
+Client → Server: Request with Content-Type: application/cbor-compact
+Server → Client: HTTP 415 Unsupported Media Type
+
+Client → Server: Request with Content-Type: application/cbor
+Server → Client: HTTP 415 Unsupported Media Type
+
+Client → Server: Request with Content-Type: application/json
+Server → Client: HTTP 200 OK
+```
+
+**Caching Encoding:**
+
+- Clients SHOULD cache the successfully negotiated encoding for the session
+- Clients MAY periodically retry higher-preference encodings to detect capability changes
+- Cache invalidation SHOULD occur on connection close or explicit renegotiation
+
+##### 5.6.8.4. Error Handling
+
+**Unsupported Encoding Error:**
+
+When a server cannot parse a message due to unsupported encoding, it SHOULD return:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "error": {
+    "code": -32700,
+    "message": "Parse error",
+    "data": "Unsupported encoding: application/cbor-compact. Supported: application/json"
+  },
+  "id": null
+}
+```
+
+**Note**: The error response MUST use an encoding the client can understand. If unknown, the server SHOULD respond with `application/json`.
+
+##### 5.6.8.5. Implementation Requirements
+
+- All implementations MUST support `application/json`
+- Implementations that support CBOR MUST support `application/cbor`
+- Support for `application/cbor-compact` is OPTIONAL
+- Servers MUST correctly identify encoding from Content-Type header or transport mechanism
+- Servers MUST respond using the same encoding as the request (or fall back to JSON for error cases)
+- Clients MUST implement fallback strategy when encoding negotiation fails
 
 ## 6. Formal Grammar
 
