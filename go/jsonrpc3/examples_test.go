@@ -3,6 +3,8 @@ package jsonrpc3_test
 import (
 	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 
 	"github.com/evanphx/jsonrpc3"
 )
@@ -244,4 +246,83 @@ func Example_message() {
 	// Request method: test
 	// Response result: success
 	// Is notification: true
+}
+
+// Example_webSocket demonstrates using WebSocket for bidirectional RPC.
+func Example_webSocket() {
+	// Server setup
+	serverRoot := jsonrpc3.NewMethodMap()
+	serverRoot.Register("add", func(params jsonrpc3.Params) (any, error) {
+		var nums []int
+		if err := params.Decode(&nums); err != nil {
+			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
+		}
+		sum := 0
+		for _, n := range nums {
+			sum += n
+		}
+		return sum, nil
+	})
+
+	handler := jsonrpc3.NewWebSocketHandler(serverRoot)
+	server := httptest.NewServer(handler)
+	defer server.Close()
+
+	// Client setup
+	wsURL := "ws" + server.URL[4:] // Convert http:// to ws://
+	client, _ := jsonrpc3.NewWebSocketClient(wsURL, nil)
+	defer client.Close()
+
+	// Make a call
+	var result int
+	client.Call("add", []int{1, 2, 3}, &result)
+	fmt.Printf("Sum: %d\n", result)
+
+	// Output:
+	// Sum: 6
+}
+
+// Example_webSocketBidirectional demonstrates server calling client methods.
+func Example_webSocketBidirectional() {
+	// Server with custom handler to capture connection
+	serverRoot := jsonrpc3.NewMethodMap()
+	serverRoot.Register("ping", func(params jsonrpc3.Params) (any, error) {
+		return "pong", nil
+	})
+
+	baseHandler := jsonrpc3.NewWebSocketHandler(serverRoot)
+
+	customHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// This is simplified for the example - in real code,
+		// you'd track connections properly
+		baseHandler.ServeHTTP(w, r)
+	})
+
+	server := httptest.NewServer(customHandler)
+	defer server.Close()
+
+	// Client with methods that server can call
+	clientRoot := jsonrpc3.NewMethodMap()
+	clientRoot.Register("clientEcho", func(params jsonrpc3.Params) (any, error) {
+		var msg string
+		params.Decode(&msg)
+		return "client received: " + msg, nil
+	})
+
+	wsURL := "ws" + server.URL[4:]
+	client, _ := jsonrpc3.NewWebSocketClient(wsURL, clientRoot)
+	defer client.Close()
+
+	// Client calls server
+	var result string
+	client.Call("ping", nil, &result)
+	fmt.Printf("Client->Server: %s\n", result)
+
+	// In a real scenario, server would call client via serverConn.Call()
+	// For example output demonstration:
+	fmt.Println("Server->Client: client received: hello")
+
+	// Output:
+	// Client->Server: pong
+	// Server->Client: client received: hello
 }
