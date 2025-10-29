@@ -1,0 +1,294 @@
+// Package jsonrpc3 implements JSON-RPC 3.0, a backward-compatible superset
+// of JSON-RPC 2.0 that adds object references and bidirectional method calls.
+package jsonrpc3
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/fxamacker/cbor/v2"
+)
+
+// Protocol version constants
+const (
+	Version20 = "2.0"
+	Version30 = "3.0"
+)
+
+// Standard error codes from JSON-RPC 2.0
+const (
+	CodeParseError     = -32700
+	CodeInvalidRequest = -32600
+	CodeMethodNotFound = -32601
+	CodeInvalidParams  = -32602
+	CodeInternalError  = -32603
+)
+
+// JSON-RPC 3.0 extended error codes
+const (
+	CodeInvalidReference = -32001
+	CodeReferenceNotFound = -32002
+	CodeReferenceTypeError = -32003
+)
+
+// Request represents a JSON-RPC request message.
+type Request struct {
+	JSONRPC string     `json:"jsonrpc"`
+	Ref     string     `json:"ref,omitempty"`     // Remote reference to invoke method on
+	Method  string     `json:"method"`
+	Params  RawMessage `json:"params,omitempty"`
+	ID      any        `json:"id,omitempty"`      // Can be string, number, or null
+	format  string     // mimetype format (not serialized)
+}
+
+// IsNotification returns true if this is a notification (no ID).
+func (r *Request) IsNotification() bool {
+	return r.ID == nil
+}
+
+// GetParams returns a Params interface configured for the request's format.
+// This allows the params to be decoded using the correct decoder (JSON, CBOR, or compact CBOR).
+func (r *Request) GetParams() Params {
+	if r.format == "" {
+		// Default to JSON for backward compatibility
+		return NewParams(r.Params)
+	}
+	return NewParamsWithFormat(r.Params, r.format)
+}
+
+// SetFormat sets the mimetype format for this request.
+// This is typically called by DecodeRequest when decoding a request.
+func (r *Request) SetFormat(mimetype string) {
+	r.format = mimetype
+}
+
+// Response represents a JSON-RPC response message.
+type Response struct {
+	JSONRPC string     `json:"jsonrpc"`
+	Result  RawMessage `json:"result,omitempty"`
+	Error   *Error     `json:"error,omitempty"`
+	ID      any        `json:"id"`
+}
+
+// Error represents a JSON-RPC error object.
+type Error struct {
+	Code    int    `json:"code"`
+	Message string `json:"message"`
+	Data    any    `json:"data,omitempty"`
+}
+
+// Error implements the error interface.
+func (e *Error) Error() string {
+	if e.Data != nil {
+		return fmt.Sprintf("jsonrpc error %d: %s (data: %v)", e.Code, e.Message, e.Data)
+	}
+	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
+}
+
+// Standard error constructors
+func NewParseError(data any) *Error {
+	return &Error{Code: CodeParseError, Message: "Parse error", Data: data}
+}
+
+func NewInvalidRequestError(data any) *Error {
+	return &Error{Code: CodeInvalidRequest, Message: "Invalid Request", Data: data}
+}
+
+func NewMethodNotFoundError(method string) *Error {
+	return &Error{Code: CodeMethodNotFound, Message: "Method not found", Data: method}
+}
+
+func NewInvalidParamsError(data any) *Error {
+	return &Error{Code: CodeInvalidParams, Message: "Invalid params", Data: data}
+}
+
+func NewInternalError(data any) *Error {
+	return &Error{Code: CodeInternalError, Message: "Internal error", Data: data}
+}
+
+// JSON-RPC 3.0 error constructors
+func NewInvalidReferenceError(data any) *Error {
+	return &Error{Code: CodeInvalidReference, Message: "Invalid reference", Data: data}
+}
+
+func NewReferenceNotFoundError(ref string) *Error {
+	return &Error{Code: CodeReferenceNotFound, Message: "Reference not found", Data: ref}
+}
+
+func NewReferenceTypeError(data any) *Error {
+	return &Error{Code: CodeReferenceTypeError, Message: "Reference type error", Data: data}
+}
+
+// LocalReference represents a reference to a local object using {"$ref": "id"} format.
+// This is used when passing references in params or returning them in results.
+type LocalReference struct {
+	Ref string `json:"$ref"`
+}
+
+// NewLocalReference creates a new local reference.
+func NewLocalReference(ref string) LocalReference {
+	return LocalReference{Ref: ref}
+}
+
+// Params provides access to method parameters in a transport-agnostic way.
+type Params interface {
+	// Decode unmarshals the parameters into the provided value.
+	Decode(v any) error
+}
+
+// Object represents something that can handle method calls.
+// This is the core abstraction for both top-level handlers and references.
+type Object interface {
+	// CallMethod invokes a method on this object.
+	CallMethod(method string, params Params) (any, error)
+}
+
+// jsonParams implements Params for JSON-encoded parameters.
+type jsonParams struct {
+	data RawMessage
+}
+
+// Decode implements Params.Decode for JSON.
+func (p *jsonParams) Decode(v any) error {
+	if p.data == nil {
+		return nil
+	}
+	return json.Unmarshal(p.data, v)
+}
+
+// NewParams creates a Params from RawMessage.
+// Defaults to JSON format for backward compatibility.
+func NewParams(data RawMessage) Params {
+	return &jsonParams{data: data}
+}
+
+// cborParams implements Params for CBOR-encoded parameters.
+type cborParams struct {
+	data RawMessage
+}
+
+// Decode implements Params.Decode for CBOR.
+func (p *cborParams) Decode(v any) error {
+	if p.data == nil {
+		return nil
+	}
+	return cbor.Unmarshal(p.data, v)
+}
+
+// NewParamsWithFormat creates a Params from RawMessage with the specified mimetype.
+// Supported mimetypes:
+//   - "json" or "application/json": JSON decoding
+//   - "cbor" or "application/cbor": CBOR decoding (works for both standard and compact)
+//   - "application/cbor; format=compact": CBOR decoding (compact format is encoding-only, decoding is same)
+func NewParamsWithFormat(data RawMessage, mimetype string) Params {
+	mt := ParseMimeType(mimetype)
+
+	if mt.IsCBOR() || mimetype == "cbor" {
+		// CBOR params (works for both standard and compact formats)
+		return &cborParams{data: data}
+	}
+
+	// Default to JSON
+	return &jsonParams{data: data}
+}
+
+// Batch represents a batch request (array of requests).
+type Batch []Request
+
+// BatchResponse represents a batch response (array of responses).
+type BatchResponse []Response
+
+// NewRequest creates a new JSON-RPC 3.0 request with JSON encoding.
+func NewRequest(method string, params any, id any) (*Request, error) {
+	return NewRequestWithFormat(method, params, id, "json")
+}
+
+// NewRequestWithFormat creates a new JSON-RPC 3.0 request with the specified encoding format.
+// Supported formats:
+//   - "json" or "application/json": JSON encoding
+//   - "cbor" or "application/cbor": Standard CBOR encoding (string keys)
+//   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
+//
+// Note: This function always creates a Request with standard structure. The compact format
+// applies only to the wire format when encoding the entire request.
+func NewRequestWithFormat(method string, params any, id any, mimetype string) (*Request, error) {
+	var paramsRaw RawMessage
+	if params != nil {
+		codec := GetCodec(mimetype)
+		data, err := codec.Marshal(params)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal params: %w", err)
+		}
+		paramsRaw = RawMessage(data)
+	}
+
+	return &Request{
+		JSONRPC: Version30,
+		Method:  method,
+		Params:  paramsRaw,
+		ID:      id,
+	}, nil
+}
+
+// NewRequestWithRef creates a new JSON-RPC 3.0 request with a remote reference.
+func NewRequestWithRef(ref, method string, params any, id any) (*Request, error) {
+	req, err := NewRequest(method, params, id)
+	if err != nil {
+		return nil, err
+	}
+	req.Ref = ref
+	return req, nil
+}
+
+// NewNotification creates a new JSON-RPC notification (no ID).
+func NewNotification(method string, params any) (*Request, error) {
+	return NewRequest(method, params, nil)
+}
+
+// NewSuccessResponse creates a successful JSON-RPC response with JSON encoding.
+func NewSuccessResponse(id any, result any, version string) (*Response, error) {
+	return NewSuccessResponseWithFormat(id, result, version, "json")
+}
+
+// NewSuccessResponseWithFormat creates a successful JSON-RPC response with the specified encoding format.
+// Supported formats:
+//   - "json" or "application/json": JSON encoding
+//   - "cbor" or "application/cbor": Standard CBOR encoding (string keys)
+//   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
+//
+// Note: This function always creates a Response with standard structure. The compact format
+// applies only to the wire format when encoding the entire response.
+func NewSuccessResponseWithFormat(id any, result any, version string, mimetype string) (*Response, error) {
+	var resultRaw RawMessage
+	if result != nil {
+		codec := GetCodec(mimetype)
+		data, err := codec.Marshal(result)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal result: %w", err)
+		}
+		resultRaw = RawMessage(data)
+	}
+
+	if version == "" {
+		version = Version30
+	}
+
+	return &Response{
+		JSONRPC: version,
+		Result:  resultRaw,
+		ID:      id,
+	}, nil
+}
+
+// NewErrorResponse creates an error JSON-RPC response.
+func NewErrorResponse(id any, err *Error, version string) *Response {
+	if version == "" {
+		version = Version30
+	}
+
+	return &Response{
+		JSONRPC: version,
+		Error:   err,
+		ID:      id,
+	}
+}

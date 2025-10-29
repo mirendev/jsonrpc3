@@ -1,0 +1,207 @@
+package jsonrpc3_test
+
+import (
+	"encoding/json"
+	"fmt"
+
+	"github.com/evanphx/jsonrpc3"
+)
+
+// Example_basicMethod demonstrates registering and calling a method.
+func Example_basicMethod() {
+	session := jsonrpc3.NewSession()
+	root := jsonrpc3.NewMethodMap()
+	handler := jsonrpc3.NewHandler(session, root, nil)
+
+	// Register a simple echo method
+	root.Register("echo", func(params jsonrpc3.Params) (any, error) {
+		var message string
+		if err := params.Decode(&message); err != nil {
+			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
+		}
+		return message, nil
+	})
+
+	// Create and handle a request
+	req, _ := jsonrpc3.NewRequest("echo", "Hello, World!", 1)
+	resp := handler.HandleRequest(req)
+
+	var result string
+	json.Unmarshal(resp.Result, &result)
+	fmt.Println(result)
+
+	// Output:
+	// Hello, World!
+}
+
+// Example_notification demonstrates sending a notification (no response expected).
+func Example_notification() {
+	session := jsonrpc3.NewSession()
+	root := jsonrpc3.NewMethodMap()
+	handler := jsonrpc3.NewHandler(session, root, nil)
+
+	called := false
+	root.Register("log", func(params jsonrpc3.Params) (any, error) {
+		called = true
+		var message string
+		params.Decode(&message)
+		fmt.Printf("Logged: %s\n", message)
+		return nil, nil
+	})
+
+	// Create a notification (ID is nil)
+	req, _ := jsonrpc3.NewNotification("log", "test message")
+	resp := handler.HandleRequest(req)
+
+	// Notifications return nil response
+	fmt.Printf("Response: %v\n", resp)
+	fmt.Printf("Method called: %v\n", called)
+
+	// Output:
+	// Logged: test message
+	// Response: <nil>
+	// Method called: true
+}
+
+// Example_batchRequests demonstrates batch request handling.
+func Example_batchRequests() {
+	session := jsonrpc3.NewSession()
+	root := jsonrpc3.NewMethodMap()
+	handler := jsonrpc3.NewHandler(session, root, nil)
+
+	root.Register("add", func(params jsonrpc3.Params) (any, error) {
+		var numbers []int
+		if err := params.Decode(&numbers); err != nil {
+			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
+		}
+		sum := 0
+		for _, n := range numbers {
+			sum += n
+		}
+		return sum, nil
+	})
+
+	// Create a batch of requests
+	req1, _ := jsonrpc3.NewRequest("add", []int{1, 2}, 1)
+	req2, _ := jsonrpc3.NewRequest("add", []int{3, 4, 5}, 2)
+	batch := jsonrpc3.Batch{*req1, *req2}
+
+	// Handle the batch
+	responses := handler.HandleBatch(batch)
+
+	for _, resp := range responses {
+		var result int
+		json.Unmarshal(resp.Result, &result)
+		fmt.Printf("Result: %d\n", result)
+	}
+
+	// Output:
+	// Result: 3
+	// Result: 12
+}
+
+// Example_errorHandling demonstrates error handling.
+func Example_errorHandling() {
+	session := jsonrpc3.NewSession()
+	root := jsonrpc3.NewMethodMap()
+	handler := jsonrpc3.NewHandler(session, root, nil)
+
+	root.Register("divide", func(params jsonrpc3.Params) (any, error) {
+		var nums struct {
+			A float64 `json:"a"`
+			B float64 `json:"b"`
+		}
+		if err := params.Decode(&nums); err != nil {
+			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
+		}
+		if nums.B == 0 {
+			return nil, &jsonrpc3.Error{
+				Code:    -32000,
+				Message: "Division by zero",
+			}
+		}
+		return nums.A / nums.B, nil
+	})
+
+	// Test with valid params
+	req1, _ := jsonrpc3.NewRequest("divide", map[string]float64{"a": 10, "b": 2}, 1)
+	resp1 := handler.HandleRequest(req1)
+	var result1 float64
+	json.Unmarshal(resp1.Result, &result1)
+	fmt.Printf("10 / 2 = %.1f\n", result1)
+
+	// Test division by zero
+	req2, _ := jsonrpc3.NewRequest("divide", map[string]float64{"a": 10, "b": 0}, 2)
+	resp2 := handler.HandleRequest(req2)
+	fmt.Printf("Error: %s (code %d)\n", resp2.Error.Message, resp2.Error.Code)
+
+	// Output:
+	// 10 / 2 = 5.0
+	// Error: Division by zero (code -32000)
+}
+
+// Example_protocolMethods demonstrates using protocol methods via $rpc.
+func Example_protocolMethods() {
+	session := jsonrpc3.NewSession()
+	root := jsonrpc3.NewMethodMap()
+	handler := jsonrpc3.NewHandler(session, root, []string{"application/json"})
+
+	// Add some test references
+	session.AddLocalRef("obj-1", "test-object")
+
+	// Get session ID
+	req1, _ := jsonrpc3.NewRequestWithRef("$rpc", "session_id", nil, 1)
+	resp1 := handler.HandleRequest(req1)
+	var sessionResult jsonrpc3.SessionIDResult
+	json.Unmarshal(resp1.Result, &sessionResult)
+	// Session ID is a UUID, just verify it's not empty
+	if sessionResult.SessionID != "" {
+		fmt.Println("Session ID: <uuid>")
+	}
+
+	// List references
+	req2, _ := jsonrpc3.NewRequestWithRef("$rpc", "list_refs", nil, 2)
+	resp2 := handler.HandleRequest(req2)
+	var refs []jsonrpc3.RefInfoResult
+	json.Unmarshal(resp2.Result, &refs)
+	fmt.Printf("References: %d\n", len(refs))
+
+	// Get MIME types
+	req3, _ := jsonrpc3.NewRequestWithRef("$rpc", "mimetypes", nil, 3)
+	resp3 := handler.HandleRequest(req3)
+	var mimeResult jsonrpc3.MimeTypesResult
+	json.Unmarshal(resp3.Result, &mimeResult)
+	fmt.Printf("MIME types: %v\n", mimeResult.MimeTypes)
+
+	// Output:
+	// Session ID: <uuid>
+	// References: 1
+	// MIME types: [application/json]
+}
+
+// Example_versionNegotiation demonstrates version handling.
+func Example_versionNegotiation() {
+	session := jsonrpc3.NewSession()
+	root := jsonrpc3.NewMethodMap()
+	handler := jsonrpc3.NewHandler(session, root, nil)
+
+	root.Register("test", func(params jsonrpc3.Params) (any, error) {
+		return "ok", nil
+	})
+
+	// Use JSON-RPC 2.0
+	handler.SetVersion(jsonrpc3.Version20)
+	req1, _ := jsonrpc3.NewRequest("test", nil, 1)
+	resp1 := handler.HandleRequest(req1)
+	fmt.Printf("Version: %s\n", resp1.JSONRPC)
+
+	// Use JSON-RPC 3.0
+	handler.SetVersion(jsonrpc3.Version30)
+	req2, _ := jsonrpc3.NewRequest("test", nil, 2)
+	resp2 := handler.HandleRequest(req2)
+	fmt.Printf("Version: %s\n", resp2.JSONRPC)
+
+	// Output:
+	// Version: 2.0
+	// Version: 3.0
+}
