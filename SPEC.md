@@ -1953,6 +1953,162 @@ Implementations MAY support some enhanced types but not others. When encounterin
 - Invalid enhanced type values SHOULD result in an Invalid params error (-32602)
 - Implementations MAY define custom enhanced types but MUST NOT use reserved type names
 
+### 5.8. HTTP Session Management
+
+When JSON-RPC 3.0 is used over HTTP, servers MAY implement session persistence using the `RPC-Session-Id` header. This allows clients to maintain stateful sessions across multiple HTTP requests, enabling features like object references to persist between calls.
+
+#### 5.8.1. RPC-Session-Id Header
+
+The `RPC-Session-Id` header is an OPTIONAL mechanism for HTTP-based transports to maintain session state between the client and server.
+
+**Server Behavior:**
+
+When a server supports session persistence:
+
+1. The server SHOULD include an `RPC-Session-Id` header in the response with a unique session identifier
+2. The session identifier MUST be unique per session
+3. The server MUST maintain session state (e.g., object references) associated with this identifier
+4. The server SHOULD accept the same session identifier in subsequent requests to resume the session
+
+**Client Behavior:**
+
+When a client receives an `RPC-Session-Id` header:
+
+1. The client SHOULD include the same `RPC-Session-Id` header value in subsequent requests to resume the session
+2. The client MAY omit the header to start a new session
+3. The client MAY clear the session by omitting the header or using a different session ID
+
+**Example:**
+
+Initial request (no session):
+```http
+POST /rpc HTTP/1.1
+Content-Type: application/json
+
+{"jsonrpc":"3.0","method":"createCounter","id":1}
+```
+
+Server response with session:
+```http
+HTTP/1.1 200 OK
+Content-Type: application/json
+RPC-Session-Id: 550e8400-e29b-41d4-a716-446655440000
+
+{"jsonrpc":"3.0","result":{"$ref":"ref-1"},"id":1}
+```
+
+Subsequent request using the same session:
+```http
+POST /rpc HTTP/1.1
+Content-Type: application/json
+RPC-Session-Id: 550e8400-e29b-41d4-a716-446655440000
+
+{"jsonrpc":"3.0","ref":"ref-1","method":"increment","id":2}
+```
+
+#### 5.8.2. Session Lifecycle
+
+**Session Creation:**
+
+- Servers MAY create a new session for any request that does not include a valid `RPC-Session-Id` header
+- Servers are NOT required to create sessions for all requests (sessions may only be created when needed)
+- Servers that create sessions MUST include the `RPC-Session-Id` header in the response
+
+**Session Resumption:**
+
+- When a client sends a request with an `RPC-Session-Id` header, the server SHOULD resume the corresponding session
+- If the session ID is not found or has expired, the server SHOULD either:
+  1. Create a new session and return a new `RPC-Session-Id`, OR
+  2. Return an error indicating the session is invalid
+
+**Session Termination:**
+
+- Servers MAY expire sessions after a period of inactivity
+- Servers MAY provide a method for clients to explicitly terminate sessions (e.g., via HTTP DELETE request or a special RPC method)
+- Object references within a session become invalid when the session terminates
+
+#### 5.8.3. Session Optimization
+
+Servers MAY optimize session storage by:
+
+- Only creating sessions when object references are returned
+- Not storing sessions for purely stateless request/response interactions
+- Expiring sessions without active object references more aggressively than sessions with references
+- Providing different time-to-live (TTL) values for different types of sessions
+
+**Example optimization strategy:**
+
+- Sessions with object references: 5 minute TTL
+- Sessions without references: 30 second TTL or no persistence
+
+#### 5.8.4. Implementation Requirements
+
+- Session support via `RPC-Session-Id` is OPTIONAL
+- If implemented, servers MUST use the `RPC-Session-Id` header name
+- Session identifiers SHOULD be globally unique (e.g., UUIDs)
+- Session identifiers MUST be treated as opaque strings by clients
+- Servers MUST handle missing or invalid session IDs gracefully
+- Implementations SHOULD document their session behavior (TTL, cleanup policy, etc.)
+- Object references (`$ref`) REQUIRE session support to function properly across multiple requests
+
+#### 5.8.5. Security Considerations
+
+- Session identifiers SHOULD be cryptographically random and unpredictable
+- Servers SHOULD implement rate limiting to prevent session exhaustion attacks
+- Servers SHOULD expire inactive sessions to prevent resource exhaustion
+- Session identifiers MUST NOT contain sensitive information
+- HTTPS SHOULD be used when sessions contain sensitive data or object references
+- Servers MAY implement additional authentication/authorization for session access
+
+### 5.9. Persistent Stream-Based Sessions
+
+When JSON-RPC 3.0 is used over persistent bidirectional streams (such as WebSockets, TCP connections, stdio, or other streaming transports), session management works differently than with HTTP:
+
+**Stream-Session Binding:**
+
+- Both client and server SHOULD bind a session to each persistent stream automatically
+- The session SHOULD be implicitly created when the stream is established
+- No explicit session identifiers or headers are needed since the stream itself identifies the session
+- All messages exchanged over the stream are part of the same session
+
+**Session Lifecycle:**
+
+- **Creation**: A session is created automatically when the stream connection is established
+- **Active**: The session remains active for the entire duration of the stream
+- **Termination**: The session MUST be automatically disposed when the stream terminates (closes, disconnects, or errors)
+
+**Session Disposal:**
+
+When a stream terminates:
+
+1. Both client and server MUST dispose of the session associated with that stream
+2. All object references (both local and remote) in that session become invalid
+3. Any lifecycle methods (such as `Dispose()` or `Close()`) on referenced objects SHOULD be called
+4. Implementations MUST clean up all resources associated with the session
+
+**Example Scenarios:**
+
+- **WebSocket**: Each WebSocket connection has one session; when the WebSocket closes, the session is disposed
+- **TCP Connection**: Each TCP connection has one session; when the connection terminates, the session is disposed
+- **Process stdio**: A parent-child process communication over stdin/stdout has one session; when either process terminates, the session is disposed
+- **Unix Domain Socket**: Each socket connection has one session; when the socket closes, the session is disposed
+
+**Benefits:**
+
+- Simpler session management (no need for session identifiers or TTL)
+- Automatic cleanup (session disposal is tied to connection lifecycle)
+- Natural request/response correlation within a single stream
+- Efficient for long-lived connections with multiple RPC calls
+
+**Comparison with HTTP Sessions:**
+
+| Aspect | HTTP Sessions | Stream Sessions |
+|--------|--------------|-----------------|
+| Session ID | Required (RPC-Session-Id header) | Not needed (stream identifies session) |
+| Lifetime | TTL-based, expires after inactivity | Connection-based, lasts as long as stream is open |
+| Cleanup | Timeout or explicit DELETE | Automatic on stream close |
+| Use Case | Stateless HTTP request/response | Long-lived bidirectional communication |
+
 ## 6. Formal Grammar
 
 ### 6.1. JSON-RPC 2.0 Objects
