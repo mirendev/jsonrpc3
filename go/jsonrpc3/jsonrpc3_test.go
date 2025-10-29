@@ -452,3 +452,314 @@ func TestNewErrorResponse(t *testing.T) {
 		t.Errorf("Error code = %v, want %v", resp.Error.Code, CodeMethodNotFound)
 	}
 }
+
+func TestMessage_IsRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  Message
+		want bool
+	}{
+		{
+			name: "request with method",
+			msg: Message{
+				JSONRPC: Version30,
+				Method:  "test",
+				ID:      1,
+			},
+			want: true,
+		},
+		{
+			name: "response with result",
+			msg: Message{
+				JSONRPC: Version30,
+				Result:  RawMessage(`"ok"`),
+				ID:      1,
+			},
+			want: false,
+		},
+		{
+			name: "response with error",
+			msg: Message{
+				JSONRPC: Version30,
+				Error:   &Error{Code: CodeInternalError, Message: "test"},
+				ID:      1,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.msg.IsRequest(); got != tt.want {
+				t.Errorf("IsRequest() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessage_IsResponse(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  Message
+		want bool
+	}{
+		{
+			name: "request",
+			msg: Message{
+				JSONRPC: Version30,
+				Method:  "test",
+				ID:      1,
+			},
+			want: false,
+		},
+		{
+			name: "response with result",
+			msg: Message{
+				JSONRPC: Version30,
+				Result:  RawMessage(`"ok"`),
+				ID:      1,
+			},
+			want: true,
+		},
+		{
+			name: "response with error",
+			msg: Message{
+				JSONRPC: Version30,
+				Error:   &Error{Code: CodeInternalError, Message: "test"},
+				ID:      1,
+			},
+			want: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.msg.IsResponse(); got != tt.want {
+				t.Errorf("IsResponse() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessage_IsNotification(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  Message
+		want bool
+	}{
+		{
+			name: "request with ID",
+			msg: Message{
+				JSONRPC: Version30,
+				Method:  "test",
+				ID:      1,
+			},
+			want: false,
+		},
+		{
+			name: "notification (no ID)",
+			msg: Message{
+				JSONRPC: Version30,
+				Method:  "test",
+			},
+			want: true,
+		},
+		{
+			name: "response",
+			msg: Message{
+				JSONRPC: Version30,
+				Result:  RawMessage(`"ok"`),
+				ID:      1,
+			},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.msg.IsNotification(); got != tt.want {
+				t.Errorf("IsNotification() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestMessage_ToRequest(t *testing.T) {
+	tests := []struct {
+		name    string
+		msg     Message
+		wantNil bool
+	}{
+		{
+			name: "valid request",
+			msg: Message{
+				JSONRPC: Version30,
+				Method:  "test",
+				Params:  RawMessage(`[1,2]`),
+				ID:      1,
+			},
+			wantNil: false,
+		},
+		{
+			name: "response returns nil",
+			msg: Message{
+				JSONRPC: Version30,
+				Result:  RawMessage(`"ok"`),
+				ID:      1,
+			},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := tt.msg.ToRequest()
+			if tt.wantNil {
+				if req != nil {
+					t.Errorf("ToRequest() = %v, want nil", req)
+				}
+			} else {
+				if req == nil {
+					t.Fatal("ToRequest() returned nil")
+				}
+				if req.Method != tt.msg.Method {
+					t.Errorf("Method = %v, want %v", req.Method, tt.msg.Method)
+				}
+				if req.ID != tt.msg.ID {
+					t.Errorf("ID = %v, want %v", req.ID, tt.msg.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestMessage_ToResponse(t *testing.T) {
+	tests := []struct {
+		name    string
+		msg     Message
+		wantNil bool
+	}{
+		{
+			name: "valid response with result",
+			msg: Message{
+				JSONRPC: Version30,
+				Result:  RawMessage(`"ok"`),
+				ID:      1,
+			},
+			wantNil: false,
+		},
+		{
+			name: "valid response with error",
+			msg: Message{
+				JSONRPC: Version30,
+				Error:   &Error{Code: CodeInternalError, Message: "test"},
+				ID:      1,
+			},
+			wantNil: false,
+		},
+		{
+			name: "request returns nil",
+			msg: Message{
+				JSONRPC: Version30,
+				Method:  "test",
+				ID:      1,
+			},
+			wantNil: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			resp := tt.msg.ToResponse()
+			if tt.wantNil {
+				if resp != nil {
+					t.Errorf("ToResponse() = %v, want nil", resp)
+				}
+			} else {
+				if resp == nil {
+					t.Fatal("ToResponse() returned nil")
+				}
+				if resp.ID != tt.msg.ID {
+					t.Errorf("ID = %v, want %v", resp.ID, tt.msg.ID)
+				}
+			}
+		})
+	}
+}
+
+func TestMessage_Unmarshal(t *testing.T) {
+	tests := []struct {
+		name       string
+		json       string
+		wantMethod string
+		wantResult bool
+		wantError  bool
+	}{
+		{
+			name:       "request message",
+			json:       `{"jsonrpc":"3.0","method":"test","id":1}`,
+			wantMethod: "test",
+			wantResult: false,
+			wantError:  false,
+		},
+		{
+			name:       "response message with result",
+			json:       `{"jsonrpc":"3.0","result":"ok","id":1}`,
+			wantMethod: "",
+			wantResult: true,
+			wantError:  false,
+		},
+		{
+			name:       "response message with error",
+			json:       `{"jsonrpc":"3.0","error":{"code":-32603,"message":"test"},"id":1}`,
+			wantMethod: "",
+			wantResult: false,
+			wantError:  true,
+		},
+		{
+			name:       "notification",
+			json:       `{"jsonrpc":"3.0","method":"notify"}`,
+			wantMethod: "notify",
+			wantResult: false,
+			wantError:  false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var msg Message
+			if err := json.Unmarshal([]byte(tt.json), &msg); err != nil {
+				t.Fatalf("Unmarshal failed: %v", err)
+			}
+
+			if msg.Method != tt.wantMethod {
+				t.Errorf("Method = %v, want %v", msg.Method, tt.wantMethod)
+			}
+
+			hasResult := msg.Result != nil
+			if hasResult != tt.wantResult {
+				t.Errorf("has Result = %v, want %v", hasResult, tt.wantResult)
+			}
+
+			hasError := msg.Error != nil
+			if hasError != tt.wantError {
+				t.Errorf("has Error = %v, want %v", hasError, tt.wantError)
+			}
+
+			// Verify conversion works
+			if msg.IsRequest() {
+				req := msg.ToRequest()
+				if req == nil {
+					t.Error("ToRequest() returned nil for request message")
+				}
+			}
+
+			if msg.IsResponse() {
+				resp := msg.ToResponse()
+				if resp == nil {
+					t.Error("ToResponse() returned nil for response message")
+				}
+			}
+		})
+	}
+}

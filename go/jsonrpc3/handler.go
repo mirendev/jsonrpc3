@@ -3,6 +3,7 @@ package jsonrpc3
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -180,8 +181,76 @@ func (h *Handler) handleRefMethod(req *Request) *Response {
 	return resp
 }
 
+// isBatchLocalRef checks if a reference is a batch-local reference (\0, \1, etc.)
+func isBatchLocalRef(ref string) bool {
+	return len(ref) > 0 && ref[0] == '\\'
+}
+
+// parseBatchLocalRef parses a batch-local reference and returns the index
+// Returns the index and an error if the format is invalid
+func parseBatchLocalRef(ref string) (int, error) {
+	if !isBatchLocalRef(ref) {
+		return 0, fmt.Errorf("not a batch-local reference: %s", ref)
+	}
+
+	indexStr := ref[1:] // Skip the backslash
+	index := 0
+	for _, ch := range indexStr {
+		if ch < '0' || ch > '9' {
+			return 0, fmt.Errorf("invalid batch-local reference format: %s", ref)
+		}
+		index = index*10 + int(ch-'0')
+	}
+
+	return index, nil
+}
+
+// resolveBatchLocalRef resolves a batch-local reference against previous responses
+// Returns the actual reference ID or an error
+func resolveBatchLocalRef(ref string, currentIndex int, responses []Response) (string, error) {
+	index, err := parseBatchLocalRef(ref)
+	if err != nil {
+		return "", err
+	}
+
+	// Validate index is not forward reference
+	if index >= currentIndex {
+		return "", fmt.Errorf("forward reference not allowed: \\%d refers to current or future request", index)
+	}
+
+	// Validate index is in bounds
+	if index < 0 || index >= len(responses) {
+		return "", fmt.Errorf("reference index out of bounds: \\%d", index)
+	}
+
+	// Get the response at that index
+	resp := responses[index]
+
+	// Check if the request failed
+	if resp.Error != nil {
+		return "", fmt.Errorf("referenced request \\%d failed", index)
+	}
+
+	// Parse the result to extract the reference
+	var result map[string]any
+	err = json.Unmarshal(resp.Result, &result)
+	if err != nil {
+		// If we can't unmarshal as a map, it's definitely not a reference
+		return "", fmt.Errorf("result from request \\%d is not a reference", index)
+	}
+
+	// Check if result is a LocalReference
+	if refStr, ok := result["$ref"].(string); ok {
+		return refStr, nil
+	}
+
+	// Result is not a reference
+	return "", fmt.Errorf("result from request \\%d is not a reference", index)
+}
+
 // HandleBatch processes a batch of requests and returns a batch response.
 // Empty responses (from notifications) are filtered out.
+// Supports batch-local references (\0, \1, etc.) that resolve to previous results.
 func (h *Handler) HandleBatch(batch Batch) BatchResponse {
 	if len(batch) == 0 {
 		// Invalid batch - return error
@@ -191,8 +260,40 @@ func (h *Handler) HandleBatch(batch Batch) BatchResponse {
 	}
 
 	responses := make(BatchResponse, 0, len(batch))
-	for _, req := range batch {
-		resp := h.HandleRequest(&req)
+	for i, req := range batch {
+		// Make a copy of the request so we can modify it
+		reqCopy := req
+
+		// Resolve batch-local references
+		if isBatchLocalRef(reqCopy.Ref) {
+			actualRef, err := resolveBatchLocalRef(reqCopy.Ref, i, responses)
+			if err != nil {
+				// Create error response based on the type of error
+				var rpcErr *Error
+				errMsg := err.Error()
+
+				// Check if it's a type error (non-reference result)
+				if strings.Contains(errMsg, "is not a reference") {
+					rpcErr = &Error{
+						Code:    CodeReferenceTypeError,
+						Message: "Reference type error",
+						Data:    errMsg,
+					}
+				} else {
+					rpcErr = NewInvalidReferenceError(errMsg)
+				}
+
+				resp := h.errorResponse(reqCopy.ID, rpcErr)
+				if resp != nil {
+					responses = append(responses, *resp)
+				}
+				continue
+			}
+			// Replace batch-local ref with actual ref
+			reqCopy.Ref = actualRef
+		}
+
+		resp := h.HandleRequest(&reqCopy)
 		if resp != nil {
 			responses = append(responses, *resp)
 		}

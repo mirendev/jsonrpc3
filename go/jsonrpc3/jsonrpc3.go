@@ -85,6 +85,64 @@ func (e *Error) Error() string {
 	return fmt.Sprintf("jsonrpc error %d: %s", e.Code, e.Message)
 }
 
+// Message represents a JSON-RPC message that can be either a request or response.
+// It contains all possible fields from both Request and Response types.
+// Use IsRequest() or IsResponse() to determine the message type, then convert
+// using ToRequest() or ToResponse().
+type Message struct {
+	JSONRPC string     `json:"jsonrpc"`
+	Ref     string     `json:"ref,omitempty"`     // Request field
+	Method  string     `json:"method,omitempty"`  // Request field
+	Params  RawMessage `json:"params,omitempty"`  // Request field
+	Result  RawMessage `json:"result,omitempty"`  // Response field
+	Error   *Error     `json:"error,omitempty"`   // Response field
+	ID      any        `json:"id,omitempty"`      // Both request and response
+}
+
+// IsRequest returns true if this message is a request (has method field).
+func (m *Message) IsRequest() bool {
+	return m.Method != ""
+}
+
+// IsResponse returns true if this message is a response (has result or error field).
+func (m *Message) IsResponse() bool {
+	return m.Result != nil || m.Error != nil
+}
+
+// IsNotification returns true if this is a request notification (has method but no ID).
+func (m *Message) IsNotification() bool {
+	return m.IsRequest() && m.ID == nil
+}
+
+// ToRequest converts this message to a Request.
+// Returns nil if this is not a request message.
+func (m *Message) ToRequest() *Request {
+	if !m.IsRequest() {
+		return nil
+	}
+	return &Request{
+		JSONRPC: m.JSONRPC,
+		Ref:     m.Ref,
+		Method:  m.Method,
+		Params:  m.Params,
+		ID:      m.ID,
+	}
+}
+
+// ToResponse converts this message to a Response.
+// Returns nil if this is not a response message.
+func (m *Message) ToResponse() *Response {
+	if !m.IsResponse() {
+		return nil
+	}
+	return &Response{
+		JSONRPC: m.JSONRPC,
+		Result:  m.Result,
+		Error:   m.Error,
+		ID:      m.ID,
+	}
+}
+
 // Standard error constructors
 func NewParseError(data any) *Error {
 	return &Error{Code: CodeParseError, Message: "Parse error", Data: data}

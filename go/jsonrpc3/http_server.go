@@ -1,8 +1,11 @@
 package jsonrpc3
 
 import (
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -81,8 +84,8 @@ func (h *HTTPHandler) Close() {
 
 // ServeHTTP implements http.Handler.
 // It processes JSON-RPC requests and returns responses.
-// Sessions are reused if RPC-Session-Id header is present, otherwise a new session is created.
-// Sessions are only stored if they contain object references (optimization for stateless requests).
+// Sessions are reused if RPC-Session-Id header is present, otherwise a new session is created and stored.
+// Sessions without object references are cleaned up more aggressively to optimize memory usage.
 // DELETE method with RPC-Session-Id header deletes the session and returns 204.
 func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Handle DELETE method for session deletion
@@ -135,7 +138,20 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Process request
+	// Check if request contains client references for SSE mode
+	// Only support SSE for single requests (not batch) for now
+	useSSE := false
+	if !isBatch && req != nil && scanForClientRefs(req.Params) {
+		useSSE = true
+	}
+
+	// Handle SSE mode if client refs detected
+	if useSSE {
+		h.handleSSERequest(w, r, req, handler, contentType, sessionID, wasExisting, session)
+		return
+	}
+
+	// Process request (non-SSE mode)
 	var batchResponses BatchResponse
 	var resp *Response
 	var batchData []byte
@@ -160,16 +176,25 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		hasResponse = resp != nil
 	}
 
-	// Determine if session should be stored (has refs or was existing)
-	sessionStored := wasExisting
+	// Determine if session should be stored
+	// Store if: 1) existing session, 2) protocol method call ($rpc), 3) has local refs
+	shouldStore := wasExisting
+	isProtocolMethod := !isBatch && req != nil && (req.Ref == "$rpc" || strings.HasPrefix(req.Method, "$rpc."))
+	hasRefs := false
+
 	if !wasExisting {
-		h.storeSessionIfNeeded(sessionID, session, handler)
-		// Check if session was actually stored
-		sessionStored = len(session.ListLocalRefs()) > 0
+		// Check if session has refs after processing
+		hasRefs = len(session.ListLocalRefs()) > 0
+
+		// Store if it's a protocol method call or has refs
+		if isProtocolMethod || hasRefs {
+			h.storeSession(sessionID, session, handler)
+			shouldStore = true
+		}
 	}
 
 	// Set session ID header only if session is stored
-	if sessionStored {
+	if shouldStore {
 		w.Header().Set("RPC-Session-Id", sessionID)
 	}
 
@@ -210,7 +235,7 @@ func (h *HTTPHandler) writeData(w http.ResponseWriter, data []byte, contentType 
 
 // getOrCreateSession retrieves an existing session or creates a new one.
 // Returns the session, handler, session ID, and whether it was an existing session.
-// New sessions are NOT automatically stored - call storeSessionIfNeeded after processing.
+// New sessions are NOT automatically stored - call storeSession after processing.
 func (h *HTTPHandler) getOrCreateSession(sessionID string) (*Session, *Handler, string, bool) {
 	now := time.Now()
 
@@ -238,15 +263,9 @@ func (h *HTTPHandler) getOrCreateSession(sessionID string) (*Session, *Handler, 
 	return session, handler, newSessionID, false
 }
 
-// storeSessionIfNeeded stores a session only if it has local object references.
-// This optimizes memory usage by not storing sessions for truly stateless requests.
-func (h *HTTPHandler) storeSessionIfNeeded(sessionID string, session *Session, handler *Handler) {
-	// Only store if session has local refs
-	refs := session.ListLocalRefs()
-	if len(refs) == 0 {
-		return
-	}
-
+// storeSession stores a session for reuse across requests.
+// Sessions without local refs will be cleaned up more aggressively by the cleanup loop.
+func (h *HTTPHandler) storeSession(sessionID string, session *Session, handler *Handler) {
 	now := time.Now()
 	entry := &sessionEntry{
 		session:      session,
@@ -311,4 +330,115 @@ func (h *HTTPHandler) cleanupExpiredSessions() {
 		}
 		delete(h.sessions, id)
 	}
+}
+
+// scanForClientRefs recursively scans params for LocalReference structures.
+// Returns true if any client references are found ({"$ref": "..."}).
+func scanForClientRefs(params RawMessage) bool {
+	if len(params) == 0 {
+		return false
+	}
+
+	// Try to decode as generic structure
+	var data any
+	if err := json.Unmarshal(params, &data); err != nil {
+		return false
+	}
+
+	return hasClientRefsInValue(data)
+}
+
+// hasClientRefsInValue recursively checks if a value contains LocalReference structures.
+func hasClientRefsInValue(value any) bool {
+	switch v := value.(type) {
+	case map[string]any:
+		// Check if this is a LocalReference
+		if refStr, ok := v["$ref"].(string); ok && refStr != "" && len(v) == 1 {
+			return true
+		}
+		// Recurse into map values
+		for _, val := range v {
+			if hasClientRefsInValue(val) {
+				return true
+			}
+		}
+	case []any:
+		// Recurse into array elements
+		for _, val := range v {
+			if hasClientRefsInValue(val) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// writeSSEEvent writes a single SSE event in the format:
+// data: <json>\n\n
+func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, data []byte) error {
+	if _, err := fmt.Fprintf(w, "data: %s\n\n", data); err != nil {
+		return err
+	}
+	if flusher != nil {
+		flusher.Flush()
+	}
+	return nil
+}
+
+// handleSSERequest handles a request that contains client references using SSE.
+// It sends the response as an SSE stream, allowing for notifications to be sent
+// to client callback objects during request processing.
+func (h *HTTPHandler) handleSSERequest(w http.ResponseWriter, r *http.Request,
+	req *Request, handler *Handler, contentType string,
+	sessionID string, wasExisting bool, session *Session) {
+
+	// Set SSE headers
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+
+	// Always store session for SSE mode (client refs detected)
+	if !wasExisting {
+		h.sessionMutex.Lock()
+		h.sessions[sessionID] = &sessionEntry{
+			session:      session,
+			handler:      handler,
+			lastAccessed: time.Now(),
+		}
+		h.sessionMutex.Unlock()
+	}
+
+	// Set session ID header
+	w.Header().Set("RPC-Session-Id", sessionID)
+
+	// Get flusher for streaming
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		http.Error(w, "Streaming not supported", http.StatusInternalServerError)
+		return
+	}
+
+	// Write headers immediately
+	w.WriteHeader(http.StatusOK)
+	flusher.Flush()
+
+	// Process request
+	resp := handler.HandleRequest(req)
+
+	// Encode and send result as SSE event
+	codec := GetCodec(contentType)
+	if resp != nil {
+		respData, err := codec.Marshal(resp)
+		if err != nil {
+			// Can't send error response at this point, connection is already open
+			return
+		}
+
+		if err := writeSSEEvent(w, flusher, respData); err != nil {
+			// Connection error, nothing we can do
+			return
+		}
+	}
+
+	// Connection closes when function returns
 }

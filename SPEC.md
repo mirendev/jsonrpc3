@@ -480,6 +480,203 @@ In a bidirectional JSON-RPC 3.0 connection:
    }
    ```
 
+#### 3.2.5. Transport Considerations
+
+The ability for servers to invoke methods on client references depends on the underlying transport mechanism:
+
+**Bidirectional Transports** (Server-to-Client Calls Supported):
+- **WebSocket**: Full bidirectional support; both client and server can initiate requests at any time
+- **TCP/Unix Domain Sockets**: Full bidirectional support over persistent connections
+- **stdio (Process Communication)**: Full bidirectional support; parent and child processes can exchange messages in both directions
+
+**Unidirectional/Request-Response Transports** (Server-to-Client Calls NOT Supported):
+- **HTTP**: Standard HTTP is request-response only; servers cannot initiate requests to clients
+  - The server can only respond to client requests
+  - Client callbacks passed to the server via `{"$ref": "..."}` cannot be invoked unless:
+    - The client implements a separate HTTP endpoint that the server can call (out-of-band)
+    - A bidirectional transport like WebSocket is established
+    - Long-polling or similar techniques are used
+
+**Implementation Requirements:**
+
+1. **API Documentation**: APIs using JSON-RPC 3.0 MUST document whether they support bidirectional method calls and which transports enable this feature
+
+2. **Transport Capabilities**: Implementations SHOULD clearly indicate transport capabilities:
+   - Whether server-to-client calls are supported
+   - Which transports enable bidirectional communication
+   - Any limitations or requirements for using client callbacks
+
+3. **Error Handling**: When a client passes a callback reference over a unidirectional transport:
+   - The server MAY accept the reference but should document that callbacks cannot be invoked
+   - The server MAY return an error indicating bidirectional calls are not supported
+   - The API documentation MUST explain the expected behavior
+
+**Example API Documentation:**
+
+*"This API supports client callbacks only over WebSocket connections. When using HTTP, client references will be accepted but cannot be invoked by the server. To receive server-initiated notifications, clients must establish a WebSocket connection."*
+
+#### 3.2.6. Server Notifications to Client References
+
+Even over unidirectional transports like HTTP, servers can still interact with client references using **notifications** (requests without an `id` field). Since notifications do not require a response, they can be included in server responses without violating the request-response model.
+
+**Key Concept**: When a server needs to invoke a client reference but cannot send a request (because the transport doesn't support server-to-client requests), the server can send a **notification** that references the client's callback. The client processes this notification locally without sending a response.
+
+**How It Works:**
+
+1. **Client passes reference to server** via `{"$ref": "client-callback-1"}`
+2. **Server sends notification in response** that references the client callback
+3. **Client processes notification locally** by invoking the method on its own reference
+4. **No response is sent** because it's a notification (no `id` field)
+
+**Example - HTTP with Notifications:**
+
+**Client Request:**
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "subscribe",
+  "params": {
+    "topic": "updates",
+    "callback": {"$ref": "client-cb-1"}
+  },
+  "id": 1
+}
+```
+
+**Server Response (includes notification to client ref):**
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "result": "subscribed",
+    "id": 1
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "client-cb-1",
+    "method": "onUpdate",
+    "params": {"message": "Initial update"}
+  }
+]
+```
+
+The response is a batch containing:
+1. The normal response to the client's request (with `id: 1`)
+2. A notification to the client's callback (no `id` field)
+
+The client processes both messages:
+- Resolves the response for request ID 1
+- Invokes the `onUpdate` method on its local `client-cb-1` reference
+
+**Advantages of Notifications:**
+
+1. **Works over HTTP**: No bidirectional connection required
+2. **No response needed**: Notifications are fire-and-forget
+3. **Efficient**: Multiple notifications can be batched in a single response
+4. **Simple**: Client processes its own references locally
+
+**Limitations:**
+
+1. **No acknowledgment**: Server doesn't know if notification was processed
+2. **No return value**: Client cannot return a result to the server
+3. **One-way only**: Server can send notifications but cannot receive responses to them
+
+**When to Use Notifications vs. Requests:**
+
+| Scenario | Use Notification | Use Request |
+|----------|------------------|-------------|
+| Fire-and-forget callback | ✓ | |
+| Need acknowledgment | | ✓ |
+| Need return value | | ✓ |
+| HTTP transport | ✓ | |
+| WebSocket/bidirectional transport | Either | Either |
+
+**Polling Pattern with Notifications:**
+
+For HTTP APIs, a common pattern is for clients to poll periodically, and the server includes any pending notifications in the poll response:
+
+```json
+// Client polls
+{
+  "jsonrpc": "3.0",
+  "method": "poll",
+  "params": {"session": "abc123"},
+  "id": 42
+}
+
+// Server response with notifications
+[
+  {
+    "jsonrpc": "3.0",
+    "result": {"pending": 2},
+    "id": 42
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "client-cb-1",
+    "method": "onEvent",
+    "params": {"event": "update-1"}
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "client-cb-1",
+    "method": "onEvent",
+    "params": {"event": "update-2"}
+  }
+]
+```
+
+**Server-Sent Events (SSE) Alternative:**
+
+APIs can also utilize **HTTP Server-Sent Events (SSE)** to stream notifications to client references without requiring polling or batching. With SSE, the server maintains an open HTTP connection and sends notifications as individual events.
+
+**How SSE Works with Client References:**
+
+1. Client establishes initial HTTP request with callback reference
+2. Server opens SSE stream in response
+3. Server sends notifications as separate SSE events whenever needed
+4. Each event contains a JSON-RPC notification to the client reference
+
+**Example SSE Stream:**
+
+```
+// Client opens SSE connection
+GET /notifications?session=abc123 HTTP/1.1
+
+// Server sends notifications as they occur
+data: {"jsonrpc":"3.0","ref":"client-cb-1","method":"onEvent","params":{"event":"update-1"}}
+
+data: {"jsonrpc":"3.0","ref":"client-cb-1","method":"onEvent","params":{"event":"update-2"}}
+
+data: {"jsonrpc":"3.0","ref":"client-cb-1","method":"onEvent","params":{"event":"update-3"}}
+```
+
+**Advantages of SSE for Notifications:**
+
+- **Real-time**: Notifications sent immediately without polling
+- **Efficient**: Single long-lived connection, no repeated HTTP overhead
+- **Simple**: Standard HTTP, widely supported by browsers and clients
+- **No batching needed**: Each notification sent independently
+- **Automatic reconnection**: SSE clients handle reconnection automatically
+
+**Comparison of HTTP Patterns:**
+
+| Pattern | Latency | Overhead | Complexity | Browser Support |
+|---------|---------|----------|------------|-----------------|
+| Batch Response | None | Low | Low | Universal |
+| Polling | High | High | Low | Universal |
+| SSE | Low | Low | Medium | Good |
+| WebSocket | Low | Low | High | Good |
+
+APIs using SSE for notifications SHOULD document the SSE endpoint and expected event format.
+
+**Implementation Notes:**
+
+- Notifications to client references SHOULD only be sent when the client has explicitly passed that reference to the server
+- Servers SHOULD document their use of notifications for client callbacks
+- Clients MUST be prepared to handle batch responses that include notifications
+- Notifications to client references are processed the same way as any notification: invoke the method locally without sending a response
+
 ### 3.3. Extended Error Codes
 
 JSON-RPC 3.0 defines additional error codes for reference-related errors:
@@ -805,6 +1002,209 @@ Implementations SHOULD consider the following security implications of protocol 
 - The `$rpc` reference does not appear in `list_refs` results—it is always implicitly available.
 
 - Protocol methods MUST be safe to call from either party (client or server) in bidirectional connections.
+
+### 3.5. Batch-Local References
+
+JSON-RPC 3.0 provides a special mechanism for batch requests that allows operations to be pipelined without requiring round-trip communication. This is accomplished using **batch-local references** that automatically resolve to the results of previous requests within the same batch.
+
+#### 3.5.1. Batch-Local Reference Format
+
+Batch-local references use a special syntax: a backslash followed by a number (e.g., `\0`, `\1`, `\2`). The number indicates the zero-based index of a request within the same batch.
+
+**Format**: `\<index>` where `<index>` is the zero-based position of the request in the batch array.
+
+**Examples**:
+- `\0` - Refers to the result of the first request (index 0) in the batch
+- `\1` - Refers to the result of the second request (index 1) in the batch
+- `\2` - Refers to the result of the third request (index 2) in the batch
+
+#### 3.5.2. Resolution Semantics
+
+When a batch-local reference appears in the `ref` field of a request within a batch:
+
+1. **Sequential Processing**: The batch MUST be processed sequentially in array order when batch-local references are present
+2. **Forward References Only**: A request can only reference earlier requests (indices less than the current request's index)
+3. **Result Resolution**: The batch-local reference `\N` resolves to the `result` field of the response for request at index N
+4. **Reference Type**: If the result at index N is a LocalReference (`{"$ref": "..."}`), the batch-local reference resolves to that reference identifier
+5. **Error Propagation**: If the referenced request (index N) results in an error, the current request MUST fail with a reference error
+
+#### 3.5.3. Example: Database Query Pipeline
+
+This example shows opening a database and immediately querying it in a single batch request:
+
+**Batch Request**:
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "method": "openDatabase",
+    "params": {"name": "mydb"},
+    "id": 0
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "\\0",
+    "method": "query",
+    "params": {"sql": "SELECT * FROM users"},
+    "id": 1
+  }
+]
+```
+
+**Batch Response**:
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "result": {"$ref": "db-conn-123"},
+    "id": 0
+  },
+  {
+    "jsonrpc": "3.0",
+    "result": {
+      "rows": [
+        {"id": 1, "name": "Alice"},
+        {"id": 2, "name": "Bob"}
+      ]
+    },
+    "id": 1
+  }
+]
+```
+
+**Explanation**:
+1. Request 0 calls `openDatabase`, which returns a reference `{"$ref": "db-conn-123"}`
+2. Request 1 uses `"ref": "\\0"`, which resolves to `"db-conn-123"` (the reference from request 0's result)
+3. The server invokes `query` on the database connection
+4. Both results are returned in a single response
+
+#### 3.5.4. Example: Chaining Multiple Operations
+
+Batch-local references can chain multiple operations together:
+
+**Batch Request**:
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "method": "createWorkspace",
+    "params": {"name": "project-a"},
+    "id": 0
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "\\0",
+    "method": "createDocument",
+    "params": {"title": "README"},
+    "id": 1
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "\\1",
+    "method": "write",
+    "params": {"content": "# Hello World"},
+    "id": 2
+  }
+]
+```
+
+This creates a workspace, creates a document in that workspace, and writes content to the document—all in a single batch request.
+
+#### 3.5.5. Error Handling
+
+If a referenced request fails, the dependent request MUST also fail:
+
+**Batch Request**:
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "method": "openDatabase",
+    "params": {"name": "invalid-db"},
+    "id": 0
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "\\0",
+    "method": "query",
+    "params": {"sql": "SELECT * FROM users"},
+    "id": 1
+  }
+]
+```
+
+**Batch Response** (when request 0 fails):
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "error": {
+      "code": -32000,
+      "message": "Database not found",
+      "data": "invalid-db"
+    },
+    "id": 0
+  },
+  {
+    "jsonrpc": "3.0",
+    "error": {
+      "code": -32001,
+      "message": "Invalid reference",
+      "data": "Referenced request \\0 failed"
+    },
+    "id": 1
+  }
+]
+```
+
+#### 3.5.6. Implementation Requirements
+
+Implementations that support batch-local references MUST:
+
+1. **Validate Reference Indices**: Ensure that batch-local reference indices are within valid range (0 to current index - 1)
+2. **Process Sequentially**: Process batch requests in order when batch-local references are detected (cannot process in parallel)
+3. **Check Result Type**: Verify that the referenced result is a LocalReference or can be used as a reference
+4. **Error on Forward References**: Return an error if a request references a later request in the batch (index >= current)
+5. **Error on Failed References**: If a referenced request fails, the dependent request MUST fail with code -32001 (Invalid reference)
+
+#### 3.5.7. Non-Reference Results
+
+If a batch-local reference `\N` points to a request whose result is NOT a LocalReference (e.g., a plain value like a number or string), the implementation SHOULD return an error with code -32003 (Reference type error).
+
+**Example of Invalid Usage**:
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "method": "add",
+    "params": [2, 3],
+    "id": 0
+  },
+  {
+    "jsonrpc": "3.0",
+    "ref": "\\0",
+    "method": "someMethod",
+    "id": 1
+  }
+]
+```
+
+If request 0 returns `{"result": 5, "id": 0}`, request 1 should fail because `5` is not a reference.
+
+#### 3.5.8. Benefits
+
+Batch-local references provide several advantages:
+
+1. **Reduced Latency**: Multiple dependent operations can be executed without round-trips
+2. **Atomic Operations**: A sequence of operations can be sent as a single unit
+3. **Simplified Client Code**: Clients don't need to wait for intermediate responses
+4. **Bandwidth Efficiency**: Reduces the number of HTTP requests or messages sent
+
+#### 3.5.9. Compatibility
+
+- Batch-local references are a JSON-RPC 3.0 feature (they use the `ref` field which is 3.0-specific)
+- Servers that do not support batch-local references MAY treat `\0` as a regular reference string and return a "Reference not found" error
+- Clients SHOULD only use batch-local references when they know the server supports JSON-RPC 3.0
 
 ## 4. Complete Examples
 

@@ -205,3 +205,43 @@ func Example_versionNegotiation() {
 	// Version: 2.0
 	// Version: 3.0
 }
+
+// Example_message demonstrates using the Message type to handle
+// both requests and responses with a single type.
+func Example_message() {
+	// Request message
+	requestJSON := `{"jsonrpc":"3.0","method":"test","id":1}`
+	var reqMsg jsonrpc3.Message
+	json.Unmarshal([]byte(requestJSON), &reqMsg)
+
+	if reqMsg.IsRequest() {
+		req := reqMsg.ToRequest()
+		fmt.Printf("Request method: %s\n", req.Method)
+	}
+
+	// Response message
+	responseJSON := `{"jsonrpc":"3.0","result":"success","id":1}`
+	var respMsg jsonrpc3.Message
+	json.Unmarshal([]byte(responseJSON), &respMsg)
+
+	if respMsg.IsResponse() {
+		resp := respMsg.ToResponse()
+		var result string
+		json.Unmarshal(resp.Result, &result)
+		fmt.Printf("Response result: %s\n", result)
+	}
+
+	// Notification (request without ID)
+	notificationJSON := `{"jsonrpc":"3.0","method":"notify"}`
+	var notifMsg jsonrpc3.Message
+	json.Unmarshal([]byte(notificationJSON), &notifMsg)
+
+	if notifMsg.IsNotification() {
+		fmt.Println("Is notification: true")
+	}
+
+	// Output:
+	// Request method: test
+	// Response result: success
+	// Is notification: true
+}

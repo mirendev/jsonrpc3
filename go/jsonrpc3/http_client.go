@@ -1,11 +1,13 @@
 package jsonrpc3
 
 import (
+	"bufio"
 	"bytes"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"sync/atomic"
 )
 
@@ -20,12 +22,18 @@ var (
 // HTTPClient is a JSON-RPC 3.0 client that communicates over HTTP.
 // It automatically tracks session IDs via the RPC-Session-Id header.
 // Defaults to CBOR format with automatic fallback to JSON.
+// Supports local callback objects for server-to-client notifications via SSE.
 type HTTPClient struct {
 	url         string
 	httpClient  *http.Client
 	contentType string
 	nextID      atomic.Int64
 	sessionID   atomic.Value // stores string
+
+	// Callback support (lazily initialized)
+	sessionMu sync.Mutex
+	session   *Session
+	handler   *Handler
 }
 
 // NewHTTPClient creates a new HTTP client for JSON-RPC 3.0.
@@ -98,6 +106,47 @@ func (c *HTTPClient) DeleteSession() error {
 // Supported types: "application/json", "application/cbor", "application/cbor; format=compact"
 func (c *HTTPClient) SetContentType(contentType string) {
 	c.contentType = contentType
+}
+
+// GetSession returns the client's session for registering local callback objects.
+// The session is lazily created on first access.
+// Use this to register callback objects that the server can invoke via notifications.
+func (c *HTTPClient) GetSession() *Session {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	if c.session == nil {
+		c.session = NewSession()
+		c.handler = NewHandler(c.session, nil, nil)
+	}
+
+	return c.session
+}
+
+// RegisterCallback registers a local callback object that can be invoked by the server.
+// The server can send notifications to this reference, which will be dispatched to the object.
+// Use this when passing client references to the server in request parameters.
+//
+// Example:
+//
+//	callback := &MyCallback{}
+//	client.RegisterCallback("client-callback-1", callback)
+//	client.Call("subscribe", map[string]any{
+//	    "callback": LocalReference{Ref: "client-callback-1"},
+//	}, &result)
+func (c *HTTPClient) RegisterCallback(ref string, obj Object) {
+	session := c.GetSession()
+	session.AddLocalRef(ref, obj)
+}
+
+// UnregisterCallback removes a previously registered callback object.
+func (c *HTTPClient) UnregisterCallback(ref string) {
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	if c.session != nil {
+		c.session.RemoveLocalRef(ref)
+	}
 }
 
 // generateID generates a unique request ID.
@@ -202,6 +251,13 @@ func (c *HTTPClient) CallRef(ref string, method string, params any, result any) 
 			return fmt.Errorf("HTTP error %d: %s", httpResp.StatusCode, string(body))
 		}
 
+		// Check if response is SSE stream
+		responseContentType := httpResp.Header.Get("Content-Type")
+		if strings.HasPrefix(responseContentType, "text/event-stream") {
+			// Handle SSE response with notifications
+			return c.handleSSEResponse(httpResp, format, result)
+		}
+
 		// Read response body
 		respData, err := io.ReadAll(httpResp.Body)
 		httpResp.Body.Close()
@@ -241,6 +297,82 @@ func (c *HTTPClient) CallRef(ref string, method string, params any, result any) 
 		return lastErr
 	}
 	return fmt.Errorf("all formats rejected by server")
+}
+
+// handleSSEResponse processes an SSE (Server-Sent Events) response stream.
+// It reads notifications and the final result from the stream, dispatching
+// notifications to local callback objects registered via RegisterCallback.
+func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, result any) error {
+	defer httpResp.Body.Close()
+
+	// Update session ID from response header
+	if sessionID := httpResp.Header.Get("RPC-Session-Id"); sessionID != "" {
+		c.SetSessionID(sessionID)
+	}
+
+	codec := GetCodec(format)
+	scanner := bufio.NewScanner(httpResp.Body)
+
+	var finalResult *Response
+	var dataLine string
+
+	// Get handler for dispatching notifications
+	c.sessionMu.Lock()
+	handler := c.handler
+	c.sessionMu.Unlock()
+
+	for scanner.Scan() {
+		line := scanner.Text()
+
+		// SSE format: "data: <json>\n\n"
+		if strings.HasPrefix(line, "data: ") {
+			dataLine = line[6:] // Skip "data: " prefix
+		} else if line == "" && dataLine != "" {
+			// Blank line indicates end of event
+			// Decode as Message to determine if it's a request or response
+			var msg Message
+			if err := codec.Unmarshal([]byte(dataLine), &msg); err == nil {
+				if msg.IsNotification() {
+					// It's a notification - dispatch to local callback
+					if handler != nil {
+						req := msg.ToRequest()
+						req.format = format
+						resp := handler.HandleRequest(req)
+						// resp will be nil for notifications, which is expected
+						_ = resp
+					}
+				} else if msg.IsResponse() {
+					// It's the final response
+					finalResult = msg.ToResponse()
+					break
+				}
+			}
+			dataLine = ""
+		}
+	}
+
+	if err := scanner.Err(); err != nil {
+		return fmt.Errorf("error reading SSE stream: %w", err)
+	}
+
+	if finalResult == nil {
+		return fmt.Errorf("no final result received in SSE stream")
+	}
+
+	// Check for RPC error
+	if finalResult.Error != nil {
+		return finalResult.Error
+	}
+
+	// Decode result if provided
+	if result != nil && finalResult.Result != nil {
+		params := NewParamsWithFormat(finalResult.Result, format)
+		if err := params.Decode(result); err != nil {
+			return fmt.Errorf("failed to decode result: %w", err)
+		}
+	}
+
+	return nil
 }
 
 // Notify sends a notification (no response expected).

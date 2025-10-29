@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"encoding/json"
 	"reflect"
 )
 
@@ -37,6 +38,12 @@ func walkValue(handler *Handler, v reflect.Value) reflect.Value {
 
 		// Check if it's already a LocalReference - leave it as-is
 		if _, ok := iface.(LocalReference); ok {
+			return v
+		}
+
+		// Check if it implements json.Marshaler - don't process it
+		// This preserves custom JSON encoding (e.g., for BigInt, RegExp)
+		if _, ok := iface.(json.Marshaler); ok {
 			return v
 		}
 	}
