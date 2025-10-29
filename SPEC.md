@@ -757,7 +757,7 @@ Retrieves the list of MIME types (encodings) supported by the server. This is us
 {
   "jsonrpc": "3.0",
   "result": [
-    "application/cbor-compact",
+    "application/cbor; format=compact",
     "application/cbor",
     "application/json"
   ],
@@ -1406,7 +1406,7 @@ The encoding format is determined by the MIME type (Content-Type) used for the m
 
 - **`application/json`** (default): Standard JSON encoding with string keys
 - **`application/cbor`**: CBOR encoding with string keys (same structure as JSON)
-- **`application/cbor-compact`**: CBOR encoding with integer keys for top-level message fields
+- **`application/cbor; format=compact`**: CBOR encoding with integer keys for top-level message fields
 
 When no Content-Type is specified, `application/json` MUST be assumed. Implementations MAY support one, two, or all three encoding formats.
 
@@ -1425,7 +1425,7 @@ Request with string keys in CBOR:
 }
 ```
 
-#### 5.6.3. Compact CBOR Mode (`application/cbor-compact`)
+#### 5.6.3. Compact CBOR Mode (`application/cbor; format=compact`)
 
 In compact CBOR mode, top-level message fields use integer keys instead of strings for maximum efficiency. This mode is suitable for bandwidth-constrained or high-performance scenarios.
 
@@ -1508,7 +1508,7 @@ For example, in compact mode:
 #### 5.6.5. Implementation Requirements
 
 - Implementations that support CBOR MUST support `application/cbor` mode
-- Support for `application/cbor-compact` is OPTIONAL
+- Support for `application/cbor; format=compact` is OPTIONAL
 - Implementations MUST correctly handle the Content-Type header (or equivalent mechanism) to determine encoding
 - When responding, implementations MUST use the same encoding as the request
 - If an implementation receives a Content-Type it does not support, it SHOULD return an error (code -32700, Parse error)
@@ -1535,8 +1535,8 @@ For HTTP-based transports, standard HTTP content negotiation mechanisms SHOULD b
 
 **Client Request Headers:**
 ```
-Content-Type: application/cbor-compact
-Accept: application/cbor-compact, application/cbor;q=0.8, application/json;q=0.5
+Content-Type: application/cbor; format=compact
+Accept: application/cbor; format=compact, application/cbor;q=0.8, application/json;q=0.5
 ```
 
 - **`Content-Type`**: Specifies the encoding of the request body
@@ -1544,7 +1544,7 @@ Accept: application/cbor-compact, application/cbor;q=0.8, application/json;q=0.5
 
 **Server Response Headers:**
 ```
-Content-Type: application/cbor-compact
+Content-Type: application/cbor; format=compact
 ```
 
 - The server MUST respond using an encoding specified in the client's `Accept` header
@@ -1556,10 +1556,10 @@ For large request bodies, clients can use the `Expect` header to verify encoding
 
 ```
 POST /jsonrpc HTTP/1.1
-Content-Type: application/cbor-compact
+Content-Type: application/cbor; format=compact
 Content-Length: 50000
 Expect: 100-continue
-Accept: application/cbor-compact, application/cbor;q=0.8, application/json;q=0.5
+Accept: application/cbor; format=compact, application/cbor;q=0.8, application/json;q=0.5
 ```
 
 **Server responses:**
@@ -1586,7 +1586,7 @@ For non-HTTP transports or when HTTP headers are not available, use the `$rpc.mi
 {
   "jsonrpc": "3.0",
   "result": [
-    "application/cbor-compact",
+    "application/cbor; format=compact",
     "application/cbor",
     "application/json"
   ],
@@ -1602,7 +1602,7 @@ The client can now select the best encoding from the intersection of what it sup
 
 When a server rejects an encoding, the client MUST implement the following fallback strategy:
 
-1. **First attempt**: Try `application/cbor-compact` (if client supports it)
+1. **First attempt**: Try `application/cbor; format=compact` (if client supports it)
 2. **Second attempt**: Fall back to `application/cbor` (if client supports it)
 3. **Final attempt**: Fall back to `application/json` (MUST be supported by all implementations)
 
@@ -1614,7 +1614,7 @@ When a server rejects an encoding, the client MUST implement the following fallb
 **Example Fallback Flow:**
 
 ```
-Client → Server: Request with Content-Type: application/cbor-compact
+Client → Server: Request with Content-Type: application/cbor; format=compact
 Server → Client: HTTP 415 Unsupported Media Type
 
 Client → Server: Request with Content-Type: application/cbor
@@ -1642,7 +1642,7 @@ When a server cannot parse a message due to unsupported encoding, it SHOULD retu
   "error": {
     "code": -32700,
     "message": "Parse error",
-    "data": "Unsupported encoding: application/cbor-compact. Supported: application/json"
+    "data": "Unsupported encoding: application/cbor; format=compact. Supported: application/json"
   },
   "id": null
 }
@@ -1654,7 +1654,7 @@ When a server cannot parse a message due to unsupported encoding, it SHOULD retu
 
 - All implementations MUST support `application/json`
 - Implementations that support CBOR MUST support `application/cbor`
-- Support for `application/cbor-compact` is OPTIONAL
+- Support for `application/cbor; format=compact` is OPTIONAL
 - Servers MUST correctly identify encoding from Content-Type header or transport mechanism
 - Servers MUST respond using the same encoding as the request (or fall back to JSON for error cases)
 - Clients MUST implement fallback strategy when encoding negotiation fails
@@ -1916,25 +1916,7 @@ Enhanced types can appear anywhere a value is expected: in `params`, `result`, o
 }
 ```
 
-#### 5.7.7. Enhanced Types in Compact CBOR Mode
-
-When using `application/cbor-compact`, enhanced type objects follow the same rules as other nested objects: the `$type` field uses the integer key `11` (assigned for enhanced type indicator), while other fields within the enhanced type object use their natural string keys.
-
-**Integer Key Mapping Update:**
-
-| Field | Integer Key | Used In | Notes |
-|-------|-------------|---------|-------|
-| `$type` | 11 | Enhanced Type | Type indicator for enhanced types |
-
-**Example in Compact CBOR Mode (conceptual):**
-```
-{
-  11: "datetime",          // $type (integer key)
-  "value": "2025-10-27T10:30:00Z"  // value (string key, nested)
-}
-```
-
-#### 5.7.8. Compatibility and Fallback
+#### 5.7.7. Compatibility and Fallback
 
 **Non-Supporting Implementations:**
 
@@ -1962,7 +1944,7 @@ Implementations MAY support some enhanced types but not others. When encounterin
 - Document which enhanced types your implementation supports
 - Consider using enhanced types in combination with schema validation
 
-#### 5.7.9. Implementation Requirements
+#### 5.7.8. Implementation Requirements
 
 - Enhanced type support is OPTIONAL
 - Implementations that support enhanced types MUST correctly interpret the `$type` field
