@@ -1659,6 +1659,318 @@ When a server cannot parse a message due to unsupported encoding, it SHOULD retu
 - Servers MUST respond using the same encoding as the request (or fall back to JSON for error cases)
 - Clients MUST implement fallback strategy when encoding negotiation fails
 
+### 5.7. Enhanced Types
+
+JSON-RPC 3.0 defines optional enhanced types that extend the basic JSON type system. Enhanced types use a special `$type` field to indicate how to interpret the object, similar to how `$ref` indicates a reference.
+
+Enhanced types are OPTIONAL. Implementations that do not support enhanced types SHOULD treat them as regular objects. Implementations that support enhanced types MUST recognize the `$type` field and interpret the value accordingly.
+
+#### 5.7.1. Enhanced Type Format
+
+An enhanced type object has the following structure:
+
+```json
+{
+  "$type": "type-name",
+  ...type-specific fields...
+}
+```
+
+The `$type` field MUST be a string identifying the type. Additional fields are type-specific.
+
+**Reserved `$type` values:**
+- `datetime`: Date and time values
+- `bytes`: Binary data
+- `bigint`: Arbitrary-precision integers
+- `regexp`: Regular expressions
+
+Implementations MAY define custom enhanced types using type names that do not conflict with reserved values. Custom type names SHOULD use a namespace prefix (e.g., `"myapp.customtype"`).
+
+#### 5.7.2. DateTime Type
+
+Represents a date and time value with optional timezone information.
+
+**Format:**
+```json
+{
+  "$type": "datetime",
+  "value": "ISO-8601-string"
+}
+```
+
+**Fields:**
+- `value` (string, required): ISO 8601 formatted datetime string
+
+**Examples:**
+
+UTC datetime:
+```json
+{
+  "$type": "datetime",
+  "value": "2025-10-27T10:30:00Z"
+}
+```
+
+Datetime with timezone offset:
+```json
+{
+  "$type": "datetime",
+  "value": "2025-10-27T10:30:00-07:00"
+}
+```
+
+Datetime with milliseconds:
+```json
+{
+  "$type": "datetime",
+  "value": "2025-10-27T10:30:00.123Z"
+}
+```
+
+**CBOR Encoding:**
+
+In CBOR, datetime values MAY use CBOR tag 0 (Standard date/time string) or tag 1 (Epoch-based date/time) as an alternative to the enhanced type format. When using enhanced types in CBOR, the same JSON structure applies.
+
+#### 5.7.3. Bytes Type
+
+Represents binary data.
+
+**Format:**
+```json
+{
+  "$type": "bytes",
+  "value": "base64-encoded-string"
+}
+```
+
+**Fields:**
+- `value` (string, required): Base64-encoded binary data (in JSON encoding)
+
+**Example in JSON:**
+```json
+{
+  "$type": "bytes",
+  "value": "SGVsbG8gV29ybGQ="
+}
+```
+
+This represents the byte sequence for "Hello World".
+
+**CBOR Encoding:**
+
+In CBOR, the `value` field SHOULD be encoded as a native CBOR byte string (major type 2) rather than base64:
+
+```
+{
+  "$type": "bytes",
+  "value": h'48656c6c6f20576f726c64'
+}
+```
+
+Alternatively, CBOR implementations MAY use CBOR tag 24 (Encoded CBOR data item) for nested CBOR data.
+
+#### 5.7.4. BigInt Type
+
+Represents arbitrary-precision integers that exceed the range of standard JSON numbers.
+
+**Format:**
+```json
+{
+  "$type": "bigint",
+  "value": "decimal-string"
+}
+```
+
+**Fields:**
+- `value` (string, required): Decimal string representation of the integer
+
+**Examples:**
+
+Large positive integer:
+```json
+{
+  "$type": "bigint",
+  "value": "12345678901234567890123456789"
+}
+```
+
+Large negative integer:
+```json
+{
+  "$type": "bigint",
+  "value": "-98765432109876543210987654321"
+}
+```
+
+**CBOR Encoding:**
+
+In CBOR, bigint values MAY use CBOR tag 2 (Unsigned bignum) or tag 3 (Negative bignum) as defined in RFC 8949, section 3.4.3. When using enhanced types in CBOR, the string representation is still valid.
+
+**Note:** The `value` MUST be a valid decimal integer (no decimal point, no scientific notation). Leading zeros are allowed but discouraged.
+
+#### 5.7.5. RegExp Type
+
+Represents a regular expression pattern with optional flags.
+
+**Format:**
+```json
+{
+  "$type": "regexp",
+  "pattern": "regex-pattern-string",
+  "flags": "flag-string"
+}
+```
+
+**Fields:**
+- `pattern` (string, required): The regular expression pattern
+- `flags` (string, optional): Regular expression flags (e.g., "i", "g", "m")
+
+**Examples:**
+
+Simple pattern:
+```json
+{
+  "$type": "regexp",
+  "pattern": "\\d+"
+}
+```
+
+Pattern with flags:
+```json
+{
+  "$type": "regexp",
+  "pattern": "[a-z]+",
+  "flags": "gi"
+}
+```
+
+Email validation pattern:
+```json
+{
+  "$type": "regexp",
+  "pattern": "^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}$"
+}
+```
+
+**Flag Interpretation:**
+
+Common flags (interpretation is implementation-defined):
+- `i`: Case-insensitive matching
+- `g`: Global matching (find all matches)
+- `m`: Multi-line mode
+- `s`: Dot matches newline
+- `u`: Unicode mode
+- `x`: Extended/verbose mode (ignore whitespace)
+
+Implementations SHOULD document which flags they support and how they interpret them.
+
+**CBOR Encoding:**
+
+CBOR may use tag 35 (Regular expression) as defined in RFC 7049. When using enhanced types in CBOR, the same JSON structure applies.
+
+#### 5.7.6. Using Enhanced Types
+
+Enhanced types can appear anywhere a value is expected: in `params`, `result`, or nested within other structures.
+
+**Example - Method with enhanced type parameters:**
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "scheduleEvent",
+  "params": {
+    "name": "Meeting",
+    "startTime": {
+      "$type": "datetime",
+      "value": "2025-10-28T14:00:00Z"
+    },
+    "duration": 3600,
+    "attachment": {
+      "$type": "bytes",
+      "value": "UERGLTEuNA0KJeLjz9MNCjEgMCBvYmoNPDwvVHlwZS9DYXRh"
+    }
+  },
+  "id": 1
+}
+```
+
+**Example - Result with enhanced types:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "id": {
+      "$type": "bigint",
+      "value": "999999999999999999999"
+    },
+    "createdAt": {
+      "$type": "datetime",
+      "value": "2025-10-27T10:30:00Z"
+    },
+    "pattern": {
+      "$type": "regexp",
+      "pattern": "^[A-Z]{3}-\\d{4}$",
+      "flags": "i"
+    }
+  },
+  "id": 1
+}
+```
+
+#### 5.7.7. Enhanced Types in Compact CBOR Mode
+
+When using `application/cbor-compact`, enhanced type objects follow the same rules as other nested objects: the `$type` field uses the integer key `11` (assigned for enhanced type indicator), while other fields within the enhanced type object use their natural string keys.
+
+**Integer Key Mapping Update:**
+
+| Field | Integer Key | Used In | Notes |
+|-------|-------------|---------|-------|
+| `$type` | 11 | Enhanced Type | Type indicator for enhanced types |
+
+**Example in Compact CBOR Mode (conceptual):**
+```
+{
+  11: "datetime",          // $type (integer key)
+  "value": "2025-10-27T10:30:00Z"  // value (string key, nested)
+}
+```
+
+#### 5.7.8. Compatibility and Fallback
+
+**Non-Supporting Implementations:**
+
+Implementations that do not support enhanced types will treat them as regular objects. For example, a `datetime` enhanced type will be seen as:
+
+```json
+{
+  "$type": "datetime",
+  "value": "2025-10-27T10:30:00Z"
+}
+```
+
+The application code would need to manually check for the `$type` field and interpret it.
+
+**Partial Support:**
+
+Implementations MAY support some enhanced types but not others. When encountering an unknown `$type`, implementations SHOULD either:
+1. Treat it as a regular object and pass it through to the application
+2. Return an error if the method requires support for that type
+
+**Recommendations:**
+
+- Use enhanced types when precision or type safety is important
+- Provide fallback behavior for clients that don't support enhanced types
+- Document which enhanced types your implementation supports
+- Consider using enhanced types in combination with schema validation
+
+#### 5.7.9. Implementation Requirements
+
+- Enhanced type support is OPTIONAL
+- Implementations that support enhanced types MUST correctly interpret the `$type` field
+- The `$type` field MUST NOT be used for any purpose other than indicating enhanced types
+- Implementations SHOULD validate enhanced type values (e.g., ensure `datetime` values are valid ISO 8601)
+- Invalid enhanced type values SHOULD result in an Invalid params error (-32602)
+- Implementations MAY define custom enhanced types but MUST NOT use reserved type names
+
 ## 6. Formal Grammar
 
 ### 6.1. JSON-RPC 2.0 Objects
