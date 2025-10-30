@@ -62,7 +62,9 @@ type Unmarshaller interface {
 }
 
 // jsonCodec implements JSON encoding/decoding.
-type jsonCodec struct{}
+type jsonCodec struct {
+	mimetype string
+}
 
 func (c jsonCodec) Marshal(v any) ([]byte, error) {
 	return json.Marshal(v)
@@ -95,7 +97,12 @@ func (c jsonCodec) UnmarshalMessages(data []byte) (MessageSet, error) {
 			if err := json.Unmarshal(data, &messages); err != nil {
 				return MessageSet{}, err
 			}
-			return MessageSet{Messages: messages, IsBatch: true}, nil
+			msgSet := MessageSet{Messages: messages, IsBatch: true}
+			// Set format on all messages
+			for i := range msgSet.Messages {
+				msgSet.Messages[i].SetFormat(c.mimetype)
+			}
+			return msgSet, nil
 		}
 		break
 	}
@@ -105,7 +112,13 @@ func (c jsonCodec) UnmarshalMessages(data []byte) (MessageSet, error) {
 	if err := json.Unmarshal(data, &msg); err != nil {
 		return MessageSet{}, err
 	}
-	return MessageSet{Messages: []Message{msg}, IsBatch: false}, nil
+
+	msgSet := MessageSet{Messages: []Message{msg}, IsBatch: false}
+	// Set format on all messages
+	for i := range msgSet.Messages {
+		msgSet.Messages[i].SetFormat(c.mimetype)
+	}
+	return msgSet, nil
 }
 
 // jsonMessageEncoder implements MessageEncoder for JSON.
@@ -145,7 +158,9 @@ func (c jsonCodec) NewMessageDecoder(r io.Reader) MessageDecoder {
 }
 
 // cborCodec implements standard CBOR encoding/decoding with string keys.
-type cborCodec struct{}
+type cborCodec struct {
+	mimetype string
+}
 
 func (c cborCodec) Marshal(v any) ([]byte, error) {
 	return cborEncMode.Marshal(v)
@@ -172,7 +187,12 @@ func (c cborCodec) UnmarshalMessages(data []byte) (MessageSet, error) {
 	if err := cbor.Unmarshal(data, &messages); err == nil && len(messages) > 0 {
 		// Check if it's actually a batch by seeing if the first element looks like a message
 		if messages[0].JSONRPC != "" || messages[0].Method != "" || messages[0].Result != nil || messages[0].Error != nil {
-			return MessageSet{Messages: messages, IsBatch: true}, nil
+			msgSet := MessageSet{Messages: messages, IsBatch: true}
+			// Set format on all messages
+			for i := range msgSet.Messages {
+				msgSet.Messages[i].SetFormat(c.mimetype)
+			}
+			return msgSet, nil
 		}
 	}
 
@@ -181,7 +201,12 @@ func (c cborCodec) UnmarshalMessages(data []byte) (MessageSet, error) {
 	if err := cbor.Unmarshal(data, &msg); err != nil {
 		return MessageSet{}, err
 	}
-	return MessageSet{Messages: []Message{msg}, IsBatch: false}, nil
+	msgSet := MessageSet{Messages: []Message{msg}, IsBatch: false}
+	// Set format on all messages
+	for i := range msgSet.Messages {
+		msgSet.Messages[i].SetFormat(c.mimetype)
+	}
+	return msgSet, nil
 }
 
 // cborMessageEncoder implements MessageEncoder for CBOR.
@@ -222,7 +247,9 @@ func (c cborCodec) NewMessageDecoder(r io.Reader) MessageDecoder {
 
 // compactCBORCodec implements compact CBOR encoding with integer keys.
 // Decoding uses the standard CBOR unmarshaler since it handles both formats.
-type compactCBORCodec struct{}
+type compactCBORCodec struct {
+	mimetype string
+}
 
 func (c compactCBORCodec) Marshal(v any) ([]byte, error) {
 	return cborCompactEncMode.Marshal(v)
@@ -259,7 +286,12 @@ func (c compactCBORCodec) UnmarshalMessages(data []byte) (MessageSet, error) {
 			for i, cm := range compactMsgs {
 				messages[i] = *fromCompactMessage(&cm)
 			}
-			return MessageSet{Messages: messages, IsBatch: true}, nil
+			msgSet := MessageSet{Messages: messages, IsBatch: true}
+			// Set format on all messages
+			for i := range msgSet.Messages {
+				msgSet.Messages[i].SetFormat(c.mimetype)
+			}
+			return msgSet, nil
 		}
 	}
 
@@ -269,7 +301,12 @@ func (c compactCBORCodec) UnmarshalMessages(data []byte) (MessageSet, error) {
 		return MessageSet{}, err
 	}
 	msg := fromCompactMessage(&compactMsg)
-	return MessageSet{Messages: []Message{*msg}, IsBatch: false}, nil
+	msgSet := MessageSet{Messages: []Message{*msg}, IsBatch: false}
+	// Set format on all messages
+	for i := range msgSet.Messages {
+		msgSet.Messages[i].SetFormat(c.mimetype)
+	}
+	return msgSet, nil
 }
 
 // compactCBORMessageEncoder implements MessageEncoder for compact CBOR with integer keys.
@@ -322,16 +359,16 @@ func GetCodec(mimetype string) Codec {
 
 	if mt.IsCBOR() {
 		if mt.IsCompact() {
-			return compactCBORCodec{}
+			return compactCBORCodec{mimetype: mimetype}
 		}
-		return cborCodec{}
+		return cborCodec{mimetype: mimetype}
 	}
 
 	// Handle bare "cbor" string for backward compatibility
 	if mimetype == "cbor" {
-		return cborCodec{}
+		return cborCodec{mimetype: "application/cbor"}
 	}
 
 	// Default to JSON
-	return jsonCodec{}
+	return jsonCodec{mimetype: mimetype}
 }

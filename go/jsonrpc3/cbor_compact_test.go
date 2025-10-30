@@ -137,9 +137,21 @@ func TestDecodeRequest_CompactCBOR(t *testing.T) {
 	data, err := cborCompactEncMode.Marshal(compactReq)
 	require.NoError(t, err, "Marshal() should not error")
 
-	// Decode using DecodeRequest
-	req, batch, isBatch, err := DecodeRequest(data, "application/cbor; format=compact")
-	require.NoError(t, err, "DecodeRequest() should not error")
+	// Decode using Codec
+	codec := GetCodec("application/cbor; format=compact")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+	// Check if this was originally a batch
+	var req *Request
+	var batch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		req, err = msgSet.ToRequest()
+	} else {
+		batch, err = msgSet.ToBatch()
+	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 
 	assert.False(t, isBatch, "isBatch should be false")
 	assert.Nil(t, batch, "batch should be nil")
@@ -160,9 +172,21 @@ func TestDecodeRequest_CompactCBOR_Batch(t *testing.T) {
 	data, err := cborCompactEncMode.Marshal(compactBatch)
 	require.NoError(t, err, "Marshal() should not error")
 
-	// Decode using DecodeRequest
-	req, batch, isBatch, err := DecodeRequest(data, "application/cbor; format=compact")
-	require.NoError(t, err, "DecodeRequest() should not error")
+	// Decode using Codec
+	codec := GetCodec("application/cbor; format=compact")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+	// Check if this was originally a batch
+	var req *Request
+	var batch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		req, err = msgSet.ToRequest()
+	} else {
+		batch, err = msgSet.ToBatch()
+	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 
 	assert.True(t, isBatch, "isBatch should be true")
 	assert.Nil(t, req, "req should be nil")
@@ -184,8 +208,10 @@ func TestEncodeResponse_CompactCBOR(t *testing.T) {
 	}
 
 	// Encode using compact format
-	data, err := EncodeResponseWithFormat(resp, "application/cbor; format=compact")
-	require.NoError(t, err, "EncodeResponseWithFormat() should not error")
+	msgSet := resp.ToMessageSet()
+	codec := GetCodec("application/cbor; format=compact")
+	data, err := codec.MarshalMessages(msgSet)
+	require.NoError(t, err, "codec.MarshalMessages() should not error")
 
 	// Verify it uses integer keys
 	var decoded map[int]any
@@ -208,8 +234,10 @@ func TestEncodeBatchResponse_CompactCBOR(t *testing.T) {
 	}
 
 	// Encode using compact format
-	data, err := EncodeBatchResponseWithFormat(batch, "application/cbor; format=compact")
-	require.NoError(t, err, "EncodeBatchResponseWithFormat() should not error")
+	msgSet := batch.ToMessageSet()
+	codec := GetCodec("application/cbor; format=compact")
+	data, err := codec.MarshalMessages(msgSet)
+	require.NoError(t, err, "codec.MarshalMessages() should not error")
 
 	// Decode to verify structure
 	var decoded []map[int]any
@@ -249,8 +277,12 @@ func TestRoundTrip_CompactCBOR(t *testing.T) {
 	require.NoError(t, err, "Marshal request should not error")
 
 	// Decode request
-	decodedReq, _, _, err := DecodeRequest(reqData, "application/cbor; format=compact")
-	require.NoError(t, err, "DecodeRequest() should not error")
+	codec := GetCodec("application/cbor; format=compact")
+	msgSet, err := codec.UnmarshalMessages(reqData)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+	decodedReq, err := msgSet.ToRequest()
+	require.NoError(t, err, "ToRequest() should not error")
 
 	// Process request
 	params := NewParamsWithFormat(decodedReq.Params, "application/cbor; format=compact")
@@ -264,8 +296,10 @@ func TestRoundTrip_CompactCBOR(t *testing.T) {
 	require.NoError(t, err, "NewSuccessResponseWithFormat() should not error")
 
 	// Encode response with compact format
-	respData, err := EncodeResponseWithFormat(resp, "application/cbor; format=compact")
-	require.NoError(t, err, "EncodeResponseWithFormat() should not error")
+	msgSet = resp.ToMessageSet()
+	codec = GetCodec("application/cbor; format=compact")
+	respData, err := codec.MarshalMessages(msgSet)
+	require.NoError(t, err, "codec.MarshalMessages() should not error")
 
 	// Verify response uses integer keys
 	var decodedResp map[int]any
@@ -319,13 +353,22 @@ func TestDecodeRequest_FormatSpecificity(t *testing.T) {
 	require.NoError(t, err, "Marshal compact should not error")
 
 	// Decode with compact mimetype - should work
-	req1, _, _, err := DecodeRequest(compactData, "application/cbor; format=compact")
-	require.NoError(t, err, "DecodeRequest with compact mimetype should not error")
+	codec1 := GetCodec("application/cbor; format=compact")
+	msgSet1, err := codec1.UnmarshalMessages(compactData)
+	require.NoError(t, err, "codec.UnmarshalMessages with compact mimetype should not error")
+
+	req1, err := msgSet1.ToRequest()
+	require.NoError(t, err, "ToRequest() should not error")
 	assert.Equal(t, "test", req1.Method)
 
 	// Decode with standard mimetype - should fail or not decode correctly
 	// because the data has integer keys but we're expecting string keys
-	req2, _, _, err := DecodeRequest(compactData, "application/cbor")
+	codec2 := GetCodec("application/cbor")
+	msgSet2, err := codec2.UnmarshalMessages(compactData)
+	var req2 *Request
+	if err == nil {
+		req2, err = msgSet2.ToRequest()
+	}
 	// This might succeed but produce incorrect results, or might fail
 	// The important thing is that we're explicitly using the format parameter
 	if err == nil {
@@ -347,12 +390,15 @@ func TestEncodeResponse_MimetypeRespected(t *testing.T) {
 	}
 
 	// Encode with standard CBOR
-	standardData, err := EncodeResponseWithFormat(resp, "application/cbor")
-	require.NoError(t, err, "EncodeResponseWithFormat standard should not error")
+	msgSet := resp.ToMessageSet()
+	codec := GetCodec("application/cbor")
+	standardData, err := codec.MarshalMessages(msgSet)
+	require.NoError(t, err, "codec.MarshalMessages() standard should not error")
 
 	// Encode with compact CBOR
-	compactData, err := EncodeResponseWithFormat(resp, "application/cbor; format=compact")
-	require.NoError(t, err, "EncodeResponseWithFormat compact should not error")
+	compactCodec := GetCodec("application/cbor; format=compact")
+	compactData, err := compactCodec.MarshalMessages(msgSet)
+	require.NoError(t, err, "codec.MarshalMessages() compact should not error")
 
 	// Verify standard uses string keys
 	var standardMap map[string]any

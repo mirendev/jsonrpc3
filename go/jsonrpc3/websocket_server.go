@@ -307,7 +307,6 @@ func (c *WebSocketConn) readLoop() {
 		}
 
 		msg := &msgSet.Messages[0]
-		msg.SetFormat(c.contentType)
 
 		// Dispatch based on message type
 		if msg.IsRequest() {
@@ -326,8 +325,6 @@ func (c *WebSocketConn) handleIncomingRequest(msg *Message) {
 	if req == nil {
 		return
 	}
-
-	req.SetFormat(c.contentType)
 
 	// Handle request via handler
 	resp := c.handler.HandleRequest(req)

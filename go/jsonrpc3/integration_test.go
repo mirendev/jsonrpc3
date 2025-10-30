@@ -36,9 +36,14 @@ func TestIntegration_BasicWorkflow(t *testing.T) {
 	require.NoError(t, err, "json.Marshal(req) should not error")
 
 	// Decode request
-	decodedReq, _, isBatch, err := DecodeRequest(reqData, "application/json")
-	require.NoError(t, err, "DecodeRequest() should not error")
-	assert.False(t, isBatch, "expected single request, not batch")
+	codec := GetCodec("application/json")
+	msgSet, err := codec.UnmarshalMessages(reqData)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	decodedReq, err := msgSet.ToRequest()
+	require.NoError(t, err, "ToRequest() should not error")
+	assert.False(t, msgSet.IsBatch, "expected single request, not batch")
 
 	// Handle request
 	resp := handler.HandleRequest(decodedReq)
@@ -203,9 +208,14 @@ func TestIntegration_BatchRequests(t *testing.T) {
 	require.NoError(t, err, "json.Marshal(batch) should not error")
 
 	// Decode batch
-	_, decodedBatch, isBatch, err := DecodeRequest(batchData, "application/json")
-	require.NoError(t, err, "DecodeRequest() should not error")
-	assert.True(t, isBatch, "expected batch request")
+	codec := GetCodec("application/json")
+	msgSet, err := codec.UnmarshalMessages(batchData)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	decodedBatch, err := msgSet.ToBatch()
+	require.NoError(t, err, "ToBatch() should not error")
+	assert.True(t, msgSet.IsBatch, "expected batch request")
 
 	// Handle batch
 	responses := handler.HandleBatch(decodedBatch)

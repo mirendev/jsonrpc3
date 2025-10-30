@@ -309,8 +309,6 @@ func (p *Peer) handleIncomingRequest(msg *Message) {
 		return
 	}
 
-	req.SetFormat(p.contentType)
-
 	// Handle request via handler
 	resp := p.handler.HandleRequest(req)
 
@@ -330,11 +328,6 @@ func (p *Peer) handleIncomingBatch(msgSet *MessageSet) {
 	batch, err := msgSet.ToBatch()
 	if err != nil {
 		return
-	}
-
-	// Set format on all requests
-	for i := range batch {
-		batch[i].SetFormat(p.contentType)
 	}
 
 	// Handle batch via handler (preserves batch-local references)

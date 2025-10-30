@@ -382,8 +382,21 @@ func TestHandler_SetVersion(t *testing.T) {
 func TestDecodeRequest_Single(t *testing.T) {
 	data := []byte(`{"jsonrpc":"3.0","method":"test","id":1}`)
 
-	req, batch, isBatch, err := DecodeRequest(data, "application/json")
-	require.NoError(t, err, "DecodeRequest() should not error")
+	codec := GetCodec("application/json")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	// Check if this was originally a batch
+	var req *Request
+	var batch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		req, err = msgSet.ToRequest()
+	} else {
+		batch, err = msgSet.ToBatch()
+	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 	assert.False(t, isBatch, "isBatch should be false")
 	require.NotNil(t, req, "req should not be nil")
 	assert.Nil(t, batch, "batch should be nil")
@@ -393,8 +406,21 @@ func TestDecodeRequest_Single(t *testing.T) {
 func TestDecodeRequest_Batch(t *testing.T) {
 	data := []byte(`[{"jsonrpc":"3.0","method":"test1","id":1},{"jsonrpc":"3.0","method":"test2","id":2}]`)
 
-	req, batch, isBatch, err := DecodeRequest(data, "application/json")
-	require.NoError(t, err, "DecodeRequest() should not error")
+	codec := GetCodec("application/json")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	// Check if this was originally a batch
+	var req *Request
+	var batch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		req, err = msgSet.ToRequest()
+	} else {
+		batch, err = msgSet.ToBatch()
+	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 	assert.True(t, isBatch, "isBatch should be true")
 	assert.Nil(t, req, "req should be nil")
 	require.NotNil(t, batch, "batch should not be nil")
@@ -405,8 +431,21 @@ func TestDecodeRequest_BatchWithWhitespace(t *testing.T) {
 	data := []byte(`
 	[{"jsonrpc":"3.0","method":"test","id":1}]`)
 
-	req, batch, isBatch, err := DecodeRequest(data, "application/json")
-	require.NoError(t, err, "DecodeRequest() should not error")
+	codec := GetCodec("application/json")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	// Check if this was originally a batch
+	var req *Request
+	var batch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		req, err = msgSet.ToRequest()
+	} else {
+		batch, err = msgSet.ToBatch()
+	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 	assert.True(t, isBatch, "isBatch should be true")
 	assert.Nil(t, req, "req should be nil")
 	require.NotNil(t, batch, "batch should not be nil")
@@ -415,6 +454,7 @@ func TestDecodeRequest_BatchWithWhitespace(t *testing.T) {
 func TestDecodeRequest_Invalid(t *testing.T) {
 	data := []byte(`{invalid json}`)
 
-	_, _, _, err := DecodeRequest(data, "application/json")
+	codec := GetCodec("application/json")
+	_, err := codec.UnmarshalMessages(data)
 	assert.Error(t, err, "should have error for invalid JSON")
 }

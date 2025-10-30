@@ -130,12 +130,35 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	session, handler, sessionID, wasExisting := h.getOrCreateSession(clientSessionID)
 
 	// Decode request
-	req, batch, isBatch, err := DecodeRequest(body, contentType)
+	codec := GetCodec(contentType)
+	msgSet, err := codec.UnmarshalMessages(body)
 	if err != nil {
 		// Send parse error response
 		errResp := NewErrorResponse(nil, NewParseError(err.Error()), h.version)
 		h.writeResponse(w, errResp, contentType)
 		return
+	}
+
+
+	// Check if this was originally a batch (JSON/CBOR array)
+	var req *Request
+	var batch Batch
+	var isBatch bool
+	if !msgSet.IsBatch {
+		req, err = msgSet.ToRequest()
+		if err != nil {
+			errResp := NewErrorResponse(nil, NewParseError(err.Error()), h.version)
+			h.writeResponse(w, errResp, contentType)
+			return
+		}
+	} else {
+		batch, err = msgSet.ToBatch()
+		isBatch = true
+		if err != nil {
+			errResp := NewErrorResponse(nil, NewParseError(err.Error()), h.version)
+			h.writeResponse(w, errResp, contentType)
+			return
+		}
 	}
 
 	// Check if request contains client references for SSE mode
@@ -164,7 +187,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 		if hasResponse {
 			var err error
-			batchData, err = EncodeBatchResponseWithFormat(batchResponses, contentType)
+			msgSet := batchResponses.ToMessageSet()
+			codec := GetCodec(contentType)
+			batchData, err = codec.MarshalMessages(msgSet)
 			if err != nil {
 				http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 				return
@@ -218,7 +243,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // writeResponse encodes and writes a single response.
 func (h *HTTPHandler) writeResponse(w http.ResponseWriter, resp *Response, contentType string) {
-	data, err := EncodeResponseWithFormat(resp, contentType)
+	msgSet := resp.ToMessageSet()
+	codec := GetCodec(contentType)
+	data, err := codec.MarshalMessages(msgSet)
 	if err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
 		return

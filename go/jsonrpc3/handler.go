@@ -307,11 +307,6 @@ func DecodeRequest(data []byte, mimetype string) (*Request, Batch, bool, error) 
 		return nil, nil, false, err
 	}
 
-	// Set format on all messages
-	for i := range msgSet.Messages {
-		msgSet.Messages[i].SetFormat(mimetype)
-	}
-
 	// Check if this was originally a batch (JSON/CBOR array)
 	if !msgSet.IsBatch {
 		req, err := msgSet.ToRequest()
@@ -320,26 +315,4 @@ func DecodeRequest(data []byte, mimetype string) (*Request, Batch, bool, error) 
 
 	batch, err := msgSet.ToBatch()
 	return nil, batch, true, err
-}
-
-// EncodeResponseWithFormat encodes a response using the specified mimetype.
-// Supported mimetypes:
-//   - "application/json": JSON encoding
-//   - "application/cbor": Standard CBOR encoding (string keys)
-//   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
-func EncodeResponseWithFormat(resp *Response, mimetype string) ([]byte, error) {
-	msgSet := resp.ToMessageSet()
-	codec := GetCodec(mimetype)
-	return codec.MarshalMessages(msgSet)
-}
-
-// EncodeBatchResponseWithFormat encodes a batch response using the specified mimetype.
-// Supported mimetypes:
-//   - "application/json": JSON encoding
-//   - "application/cbor": Standard CBOR encoding (string keys)
-//   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
-func EncodeBatchResponseWithFormat(batch BatchResponse, mimetype string) ([]byte, error) {
-	msgSet := batch.ToMessageSet()
-	codec := GetCodec(mimetype)
-	return codec.MarshalMessages(msgSet)
 }

@@ -383,8 +383,6 @@ func (c *WebTransportConn) handleIncomingRequest(msg *Message) {
 		return
 	}
 
-	req.SetFormat(c.contentType)
-
 	// Handle request via handler
 	resp := c.handler.HandleRequest(req)
 
@@ -404,11 +402,6 @@ func (c *WebTransportConn) handleIncomingBatch(msgSet *MessageSet) {
 	batch, err := msgSet.ToBatch()
 	if err != nil {
 		return
-	}
-
-	// Set format on all requests
-	for i := range batch {
-		batch[i].SetFormat(c.contentType)
 	}
 
 	// Handle batch via handler (preserves batch-local references)

@@ -596,10 +596,21 @@ func TestDecodeRequest_CBOR_Single(t *testing.T) {
 	}
 
 	// Decode
-	decodedReq, batch, isBatch, err := DecodeRequest(data, "application/cbor")
-	if err != nil {
-		require.NoError(t, err, "DecodeRequest() should not error")
+	codec := GetCodec("application/cbor")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	// Check if this was originally a batch
+	var decodedReq *Request
+	var batch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		decodedReq, err = msgSet.ToRequest()
+	} else {
+		batch, err = msgSet.ToBatch()
 	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 
 	if isBatch {
 		t.Error("isBatch should be false")
@@ -635,10 +646,21 @@ func TestDecodeRequest_CBOR_Batch(t *testing.T) {
 	}
 
 	// Decode
-	decodedReq, decodedBatch, isBatch, err := DecodeRequest(data, "application/cbor")
-	if err != nil {
-		require.NoError(t, err, "DecodeRequest() should not error")
+	codec := GetCodec("application/cbor")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	// Check if this was originally a batch
+	var decodedReq *Request
+	var decodedBatch Batch
+	isBatch := msgSet.IsBatch
+	if !msgSet.IsBatch {
+		decodedReq, err = msgSet.ToRequest()
+	} else {
+		decodedBatch, err = msgSet.ToBatch()
 	}
+	require.NoError(t, err, "ToRequest/ToBatch should not error")
 
 	if !isBatch {
 		t.Error("isBatch should be true")
@@ -694,10 +716,13 @@ func TestDecodeRequest_CBOR_WithParams(t *testing.T) {
 	}
 
 	// Decode
-	decodedReq, _, _, err := DecodeRequest(data, "application/cbor")
-	if err != nil {
-		require.NoError(t, err, "DecodeRequest() should not error")
-	}
+	codec := GetCodec("application/cbor")
+	msgSet, err := codec.UnmarshalMessages(data)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	decodedReq, err := msgSet.ToRequest()
+	require.NoError(t, err, "ToRequest() should not error")
 
 	// Decode params
 	var decodedParams map[string]any
@@ -738,9 +763,11 @@ func TestEncodeResponseWithFormat_CBOR(t *testing.T) {
 	}
 
 	// Encode to CBOR
-	data, err := EncodeResponseWithFormat(resp, "application/cbor")
+	msgSet := resp.ToMessageSet()
+	codec := GetCodec("application/cbor")
+	data, err := codec.MarshalMessages(msgSet)
 	if err != nil {
-		require.NoError(t, err, "EncodeResponseWithFormat() should not error")
+		require.NoError(t, err, "codec.MarshalMessages() should not error")
 	}
 
 	// Decode back
@@ -783,9 +810,11 @@ func TestEncodeBatchResponseWithFormat_CBOR(t *testing.T) {
 	}
 
 	// Encode to CBOR
-	data, err := EncodeBatchResponseWithFormat(batch, "application/cbor")
+	msgSet := batch.ToMessageSet()
+	codec := GetCodec("application/cbor")
+	data, err := codec.MarshalMessages(msgSet)
 	if err != nil {
-		require.NoError(t, err, "EncodeBatchResponseWithFormat() should not error")
+		require.NoError(t, err, "codec.MarshalMessages() should not error")
 	}
 
 	// Decode back
@@ -831,10 +860,13 @@ func TestRoundTrip_CBOR(t *testing.T) {
 	}
 
 	// Decode request
-	decodedReq, _, _, err := DecodeRequest(reqData, "application/cbor")
-	if err != nil {
-		require.NoError(t, err, "DecodeRequest() should not error")
-	}
+	codec := GetCodec("application/cbor")
+	msgSet, err := codec.UnmarshalMessages(reqData)
+	require.NoError(t, err, "codec.UnmarshalMessages() should not error")
+
+
+	decodedReq, err := msgSet.ToRequest()
+	require.NoError(t, err, "ToRequest() should not error")
 
 	// Process with CBOR params
 	params := NewParamsWithFormat(decodedReq.Params, "cbor")
@@ -850,9 +882,11 @@ func TestRoundTrip_CBOR(t *testing.T) {
 	}
 
 	// Encode response
-	respData, err := EncodeResponseWithFormat(resp, "application/cbor")
+	msgSet = resp.ToMessageSet()
+	codec = GetCodec("application/cbor")
+	respData, err := codec.MarshalMessages(msgSet)
 	if err != nil {
-		require.NoError(t, err, "EncodeResponseWithFormat() should not error")
+		require.NoError(t, err, "codec.MarshalMessages() should not error")
 	}
 
 	// Decode response

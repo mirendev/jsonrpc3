@@ -132,8 +132,8 @@ func (m *Message) ToRequest() *Request {
 		Method:  m.Method,
 		Params:  m.Params,
 		ID:      m.ID,
+		format:  m.format,
 	}
-	req.SetFormat(m.format)
 	return req
 }
 

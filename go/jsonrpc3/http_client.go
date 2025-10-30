@@ -347,7 +347,6 @@ func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, r
 					// It's a notification - dispatch to local callback
 					if handler != nil {
 						req := msg.ToRequest()
-						req.SetFormat(format)
 						resp := handler.HandleRequest(req)
 						// resp will be nil for notifications, which is expected
 						_ = resp
