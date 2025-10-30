@@ -147,23 +147,241 @@ Multiple request objects can be sent as an array. The server SHOULD process them
 
 If the batch contains only notifications, the server returns nothing. If the batch is empty or not a valid array, the server returns a single error response.
 
-### 2.7. Version Negotiation
+### 2.7. Request Context
+
+JSON-RPC 3.0 introduces an optional top-level `context` field that can be included in both requests and responses to provide contextual information about the message. This field enables features like distributed tracing, authentication metadata, request correlation, and custom application-specific context.
+
+#### 2.7.1. Context Format
+
+The `context` field is an OPTIONAL top-level member that can appear in both Request and Response objects:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "getData",
+  "params": {"id": 123},
+  "id": 1,
+  "context": {
+    "rpc.trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "rpc.span_id": "00f067aa0ba902b7"
+  }
+}
+```
+
+**Properties:**
+- **context** (object, optional): An object containing contextual information
+- The context object can contain any key-value pairs
+- Both parties SHOULD preserve and pass through unknown context fields
+
+#### 2.7.2. Standard Context Keys
+
+The following context keys are RECOMMENDED for common use cases:
+
+| Key | Type | Purpose | Example |
+|-----|------|---------|---------|
+| `rpc.trace_id` | string | Distributed tracing identifier | `"4bf92f3577b34da6a3ce929d0e0e4736"` |
+| `rpc.span_id` | string | Current span identifier for tracing | `"00f067aa0ba902b7"` |
+| `rpc.parent_span_id` | string | Parent span identifier | `"00f067aa0ba902b6"` |
+| `rpc.correlation_id` | string | Request correlation identifier | `"req-12345"` |
+| `rpc.auth_token` | string | Authentication token | `"Bearer eyJhbG..."` |
+| `rpc.user_id` | string | User identifier | `"user-789"` |
+| `rpc.session_id` | string | Application session identifier | `"session-abc123"` |
+| `rpc.locale` | string | Preferred locale for responses | `"en-US"` |
+| `rpc.timezone` | string | Client timezone | `"America/Los_Angeles"` |
+
+Applications MAY define custom context keys. Custom keys SHOULD use a namespace prefix (e.g., `"myapp.custom_field"`).
+
+#### 2.7.3. Context in Requests
+
+When a client includes a `context` field in a request:
+
+**Example Request with Context:**
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "processOrder",
+  "params": {
+    "orderId": "12345",
+    "items": ["item1", "item2"]
+  },
+  "id": 1,
+  "context": {
+    "rpc.trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "rpc.user_id": "user-789",
+    "myapp.region": "us-west"
+  }
+}
+```
+
+**Server Behavior:**
+- Servers SHOULD accept and process the context field
+- Servers SHOULD use context information for tracing, logging, and authentication
+- Servers MAY propagate context to downstream services
+- Servers that do not support context SHOULD ignore it without error
+
+#### 2.7.4. Context in Responses
+
+Servers MAY include a `context` field in responses to provide additional contextual information back to the client:
+
+**Example Response with Context:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "status": "completed",
+    "orderId": "12345"
+  },
+  "id": 1,
+  "context": {
+    "rpc.trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
+    "rpc.span_id": "00f067aa0ba902b8",
+    "rpc.server_time": "2025-10-30T12:00:00Z"
+  }
+}
+```
+
+**Response Context Uses:**
+- Return the same trace ID for correlation
+- Include server timing information
+- Provide additional metadata about the response
+- Propagate context from downstream services
+
+#### 2.7.5. Context in Batch Requests
+
+When using batch requests, the `context` field can appear:
+
+1. **At the top level of each request** in the batch (most common)
+2. **Shared across the batch** - implementations MAY support a batch-level context, but this is not standardized
+
+**Example Batch with Context:**
+```json
+[
+  {
+    "jsonrpc": "3.0",
+    "method": "getUser",
+    "params": {"id": 1},
+    "id": 1,
+    "context": {
+      "rpc.trace_id": "abc123",
+      "rpc.span_id": "span-1"
+    }
+  },
+  {
+    "jsonrpc": "3.0",
+    "method": "getOrders",
+    "params": {"userId": 1},
+    "id": 2,
+    "context": {
+      "rpc.trace_id": "abc123",
+      "rpc.span_id": "span-2"
+    }
+  }
+]
+```
+
+#### 2.7.6. Context Propagation
+
+When a server receives a request with context and makes downstream RPC calls, it SHOULD:
+
+1. **Preserve trace information**: Pass through `rpc.trace_id` and create new `rpc.span_id` values
+2. **Update span hierarchy**: Set `rpc.parent_span_id` to the current span
+3. **Forward relevant fields**: Pass authentication and correlation fields as appropriate
+4. **Add server context**: Include server-specific context when relevant
+
+**Example Context Propagation:**
+
+Client → Server A:
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "processPayment",
+  "params": {"amount": 100},
+  "id": 1,
+  "context": {
+    "rpc.trace_id": "trace-xyz",
+    "rpc.span_id": "span-1"
+  }
+}
+```
+
+Server A → Server B:
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "chargeCard",
+  "params": {"amount": 100},
+  "id": "a-1",
+  "context": {
+    "rpc.trace_id": "trace-xyz",
+    "rpc.span_id": "span-2",
+    "rpc.parent_span_id": "span-1"
+  }
+}
+```
+
+#### 2.7.7. Implementation Guidelines
+
+**Context Support:**
+- Support for the `context` field is OPTIONAL
+- Implementations that do not support context MUST ignore it without error
+- Implementations SHOULD document which context keys they recognize and use
+
+**Context Size:**
+- Context objects SHOULD be kept small (typically < 1KB)
+- Servers MAY reject requests with excessively large context objects
+- Large binary data SHOULD NOT be included in context; use params instead
+
+**Security Considerations:**
+- Context fields MAY contain sensitive information (tokens, user IDs)
+- Implementations MUST ensure context is not logged or exposed inappropriately
+- Authentication tokens in context SHOULD use standard security practices
+- Context SHOULD be sanitized before logging or error messages
+
+**Performance:**
+- Context processing SHOULD have minimal performance impact
+- Implementations MAY cache context parsing results
+- Trace IDs SHOULD be generated efficiently (avoid UUIDv1 with system calls)
+
+#### 2.7.8. Compatibility
+
+The `context` field is fully backward compatible:
+
+- **3.0 clients with 2.0 servers**: The context field will be ignored by 2.0 servers
+- **2.0 clients with 3.0 servers**: 2.0 clients won't send context, which is fine since it's optional
+- **Mixed versions**: Context can be used with both `"jsonrpc": "2.0"` and `"jsonrpc": "3.0"` requests
+
+**Example with JSON-RPC 2.0:**
+```json
+{
+  "jsonrpc": "2.0",
+  "method": "getData",
+  "params": [1, 2, 3],
+  "id": 1,
+  "context": {
+    "rpc.trace_id": "abc123"
+  }
+}
+```
+
+This is valid and will be processed by 3.0 servers, ignored by 2.0 servers.
+
+### 2.8. Version Negotiation
 
 JSON-RPC 3.0 uses the `jsonrpc` field for version negotiation between clients and servers.
 
-#### 2.7.1. Client Behavior
+#### 2.8.1. Client Behavior
 
 - A client that supports **only** JSON-RPC 2.0 MUST send `"jsonrpc": "2.0"`
 - A client that supports JSON-RPC 3.0 SHOULD send `"jsonrpc": "3.0"` when it intends to use 3.0 features (object references or bidirectional calls)
 - A client MAY send `"jsonrpc": "2.0"` even if it supports 3.0, to communicate using only 2.0 features
 
-#### 2.7.2. Server Behavior
+#### 2.8.2. Server Behavior
 
 - A server that receives a request with `"jsonrpc": "2.0"` MUST respond according to JSON-RPC 2.0 semantics
 - A server that supports JSON-RPC 3.0 and receives a request with `"jsonrpc": "3.0"` MUST respond with `"jsonrpc": "3.0"` and MAY return object references or expect bidirectional calls
 - A server that does **not** support JSON-RPC 3.0 but receives a request with `"jsonrpc": "3.0"` MUST return an error response with code `-32600` (Invalid Request) and SHOULD include information about the unsupported version in the error data
 
-#### 2.7.3. Fallback Mechanism
+#### 2.8.3. Fallback Mechanism
 
 When a client sends a request with `"jsonrpc": "3.0"` and receives an error indicating the version is not supported:
 
@@ -172,6 +390,8 @@ When a client sends a request with `"jsonrpc": "3.0"` and receives an error indi
 3. The client MAY periodically retry with `"jsonrpc": "3.0"` to detect if server capabilities have changed (e.g., after a server upgrade)
 
 **Example - Version negotiation failure:**
+
+#### 2.8.4. Example Negotiation Flow
 
 **Request (3.0 client to 2.0 server):**
 ```json
@@ -216,7 +436,7 @@ When a client sends a request with `"jsonrpc": "3.0"` and receives an error indi
 }
 ```
 
-#### 2.7.4. Response Version Matching
+#### 2.8.5. Response Version Matching
 
 The server's response MUST use the same `jsonrpc` version as the request:
 
@@ -2525,16 +2745,16 @@ Batch         := Array<Request | Notification>
 
 ### 6.2. JSON-RPC 3.0 Objects
 
-JSON-RPC 3.0 extends the grammar to support version "3.0", adds the `ref` field for remote object invocation, and adds reference objects for passing local references:
+JSON-RPC 3.0 extends the grammar to support version "3.0", adds the `ref` field for remote object invocation, adds reference objects for passing local references, and adds the `context` field for contextual information:
 
 ```
 Version       := "2.0" | "3.0"
-Request       := {jsonrpc: Version, ref?: string, method: string, params?: array | object, id?: string | number | null}
+Request       := {jsonrpc: Version, ref?: string, method: string, params?: array | object, id?: string | number | null, context?: object}
 Response      := SuccessResponse | ErrorResponse
-SuccessResponse := {jsonrpc: Version, result: any, id: string | number | null}
-ErrorResponse := {jsonrpc: Version, error: Error, id: string | number | null}
+SuccessResponse := {jsonrpc: Version, result: any, id: string | number | null, context?: object}
+ErrorResponse := {jsonrpc: Version, error: Error, id: string | number | null, context?: object}
 Error         := {code: number, message: string, data?: any}
-Notification  := {jsonrpc: Version, ref?: string, method: string, params?: array | object}
+Notification  := {jsonrpc: Version, ref?: string, method: string, params?: array | object, context?: object}
 Batch         := Array<Request | Notification>
 LocalReference := {$ref: string}
 ```
@@ -2542,6 +2762,7 @@ LocalReference := {$ref: string}
 Where:
 - `Version` in a response MUST match the version in the corresponding request (except when returning an error for unsupported version)
 - `ref` (optional, top-level): Specifies a remote reference to invoke the method on. This is the ONLY place where remote references can be specified. If present, the method is invoked on the referenced object controlled by the other party.
+- `context` (optional, top-level): An object containing contextual information such as trace IDs, authentication tokens, or application-specific metadata. Both requests and responses can include context.
 - `LocalReference` (as `{$ref: string}`): Used in `params` or `result` to pass references to objects controlled by the caller. These are references being passed from caller to callee.
 - Reference identifiers (both in `ref` and `LocalReference`) MUST be non-empty strings and MUST be unique within the session for references created by the same party
 - The reference identifier `"$rpc"` is reserved for protocol methods (see section 3.4) and MUST NOT be used as a user-defined reference
