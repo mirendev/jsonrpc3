@@ -45,6 +45,44 @@ type compactError struct {
 	Data    any    `cbor:"3,keyasint,omitempty"`
 }
 
+// compactMessage is the compact CBOR representation of Message using integer keys.
+// It can represent both requests and responses.
+type compactMessage struct {
+	JSONRPC string     `cbor:"1,keyasint"`
+	Ref     string     `cbor:"2,keyasint,omitempty"`
+	Method  string     `cbor:"3,keyasint,omitempty"` // Request field
+	Params  RawMessage `cbor:"4,keyasint,omitempty"` // Request field
+	ID      any        `cbor:"5,keyasint,omitempty"`
+	Result  RawMessage `cbor:"6,keyasint,omitempty"` // Response field
+	Error   *Error     `cbor:"7,keyasint,omitempty"` // Response field
+}
+
+// toCompactMessage converts a Message to compact format
+func toCompactMessage(msg *Message) *compactMessage {
+	return &compactMessage{
+		JSONRPC: msg.JSONRPC,
+		Ref:     msg.Ref,
+		Method:  msg.Method,
+		Params:  msg.Params,
+		ID:      msg.ID,
+		Result:  msg.Result,
+		Error:   msg.Error,
+	}
+}
+
+// fromCompactMessage converts from compact format to Message
+func fromCompactMessage(cm *compactMessage) *Message {
+	return &Message{
+		JSONRPC: cm.JSONRPC,
+		Ref:     cm.Ref,
+		Method:  cm.Method,
+		Params:  cm.Params,
+		ID:      cm.ID,
+		Result:  cm.Result,
+		Error:   cm.Error,
+	}
+}
+
 // toCompactRequest converts a Request to compact format
 func toCompactRequest(req *Request) *compactRequest {
 	return &compactRequest{

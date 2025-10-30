@@ -239,7 +239,7 @@ func (p *Peer) readLoop() {
 	defer p.Close()
 
 	codec := GetCodec(p.contentType)
-	decoder := codec.NewDecoder(p.reader)
+	decoder := codec.NewMessageDecoder(p.reader)
 
 	for {
 		select {
@@ -248,23 +248,42 @@ func (p *Peer) readLoop() {
 		default:
 		}
 
-		// Decode message from stream
-		var msg Message
-		if err := decoder.Decode(&msg); err != nil {
+		// Decode message set from stream (could be single message or batch)
+		msgSet, err := decoder.Decode()
+		if err != nil {
 			if err != io.EOF {
 				p.setError(fmt.Errorf("read error: %w", err))
 			}
 			return
 		}
 
-		// Dispatch based on message type
-		if msg.IsRequest() {
-			// Incoming request from remote peer
-			go p.handleIncomingRequest(&msg)
-		} else if msg.IsResponse() {
-			// Response to our request
-			p.handleIncomingResponse(&msg)
+		// Check if all messages are requests or all are responses
+		allRequests := true
+		allResponses := true
+		for i := range msgSet.Messages {
+			if !msgSet.Messages[i].IsRequest() {
+				allRequests = false
+			}
+			if !msgSet.Messages[i].IsResponse() {
+				allResponses = false
+			}
 		}
+
+		// Handle batch requests as a unit (preserves batch-local references)
+		if allRequests && msgSet.IsBatch {
+			go p.handleIncomingBatch(&msgSet)
+		} else if allRequests {
+			// Single request
+			msg := &msgSet.Messages[0]
+			go p.handleIncomingRequest(msg)
+		} else if allResponses {
+			// Process responses individually (no batch context needed)
+			for i := range msgSet.Messages {
+				msg := &msgSet.Messages[i]
+				p.handleIncomingResponse(msg)
+			}
+		}
+		// Mixed request/response batches are invalid, ignore
 	}
 }
 
@@ -284,6 +303,32 @@ func (p *Peer) handleIncomingRequest(msg *Message) {
 	if resp != nil {
 		select {
 		case p.writeChan <- resp:
+		case <-p.closeChan:
+		}
+	}
+}
+
+// handleIncomingBatch processes a batch of incoming requests from the remote peer.
+// Batch requests must be processed together to support batch-local references (\0, \1, etc.)
+func (p *Peer) handleIncomingBatch(msgSet *MessageSet) {
+	// Convert MessageSet to Batch
+	batch, err := msgSet.ToBatch()
+	if err != nil {
+		return
+	}
+
+	// Set format on all requests
+	for i := range batch {
+		batch[i].SetFormat(p.contentType)
+	}
+
+	// Handle batch via handler (preserves batch-local references)
+	responses := p.handler.HandleBatch(batch)
+
+	// Send batch response as a unit (will be encoded in writeLoop)
+	if len(responses) > 0 {
+		select {
+		case p.writeChan <- responses:
 		case <-p.closeChan:
 		}
 	}
@@ -311,12 +356,29 @@ func (p *Peer) handleIncomingResponse(msg *Message) {
 // writeLoop continuously sends queued messages to the writer.
 func (p *Peer) writeLoop() {
 	codec := GetCodec(p.contentType)
-	encoder := codec.NewEncoder(p.writer)
 
 	for {
 		select {
-		case msg := <-p.writeChan:
-			if err := encoder.Encode(msg); err != nil {
+		case item := <-p.writeChan:
+			// Check if item implements MessageSetConvertible
+			convertible, ok := item.(MessageSetConvertible)
+			if !ok {
+				p.setError(fmt.Errorf("unexpected message type: %T", item))
+				return
+			}
+
+			// Convert to MessageSet
+			msgSet := convertible.ToMessageSet()
+
+			// Encode the message set
+			data, err := codec.MarshalMessages(msgSet)
+			if err != nil {
+				p.setError(fmt.Errorf("marshal error: %w", err))
+				return
+			}
+
+			// Write to stream
+			if _, err := p.writer.Write(data); err != nil {
 				p.setError(fmt.Errorf("write error: %w", err))
 				return
 			}

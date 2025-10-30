@@ -318,7 +318,7 @@ func (c *WebTransportConn) readLoop() {
 	defer c.Close()
 
 	codec := GetCodec(c.contentType)
-	decoder := codec.NewDecoder(c.controlStream)
+	decoder := codec.NewMessageDecoder(c.controlStream)
 
 	for {
 		select {
@@ -327,21 +327,40 @@ func (c *WebTransportConn) readLoop() {
 		default:
 		}
 
-		// Decode message from stream
-		var msg Message
-		if err := decoder.Decode(&msg); err != nil {
+		// Decode message set from stream (could be single message or batch)
+		msgSet, err := decoder.Decode()
+		if err != nil {
 			c.setError(fmt.Errorf("read error: %w", err))
 			return
 		}
 
-		// Dispatch based on message type
-		if msg.IsRequest() {
-			// Incoming request from client
-			go c.handleIncomingRequest(&msg)
-		} else if msg.IsResponse() {
-			// Response to our request
-			c.handleIncomingResponse(&msg)
+		// Check if all messages are requests or all are responses
+		allRequests := true
+		allResponses := true
+		for i := range msgSet.Messages {
+			if !msgSet.Messages[i].IsRequest() {
+				allRequests = false
+			}
+			if !msgSet.Messages[i].IsResponse() {
+				allResponses = false
+			}
 		}
+
+		// Handle batch requests as a unit (preserves batch-local references)
+		if allRequests && msgSet.IsBatch {
+			go c.handleIncomingBatch(&msgSet)
+		} else if allRequests {
+			// Single request
+			msg := &msgSet.Messages[0]
+			go c.handleIncomingRequest(msg)
+		} else if allResponses {
+			// Process responses individually (no batch context needed)
+			for i := range msgSet.Messages {
+				msg := &msgSet.Messages[i]
+				c.handleIncomingResponse(msg)
+			}
+		}
+		// Mixed request/response batches are invalid, ignore
 	}
 }
 
@@ -361,6 +380,32 @@ func (c *WebTransportConn) handleIncomingRequest(msg *Message) {
 	if resp != nil {
 		select {
 		case c.writeChan <- resp:
+		case <-c.closeChan:
+		}
+	}
+}
+
+// handleIncomingBatch processes a batch of incoming requests from the client.
+// Batch requests must be processed together to support batch-local references (\0, \1, etc.)
+func (c *WebTransportConn) handleIncomingBatch(msgSet *MessageSet) {
+	// Convert MessageSet to Batch
+	batch, err := msgSet.ToBatch()
+	if err != nil {
+		return
+	}
+
+	// Set format on all requests
+	for i := range batch {
+		batch[i].SetFormat(c.contentType)
+	}
+
+	// Handle batch via handler (preserves batch-local references)
+	responses := c.handler.HandleBatch(batch)
+
+	// Send batch response as a unit (will be encoded in writeLoop)
+	if len(responses) > 0 {
+		select {
+		case c.writeChan <- responses:
 		case <-c.closeChan:
 		}
 	}
@@ -388,12 +433,29 @@ func (c *WebTransportConn) handleIncomingResponse(msg *Message) {
 // writeLoop continuously sends queued messages to the control stream.
 func (c *WebTransportConn) writeLoop() {
 	codec := GetCodec(c.contentType)
-	encoder := codec.NewEncoder(c.controlStream)
 
 	for {
 		select {
-		case msg := <-c.writeChan:
-			if err := encoder.Encode(msg); err != nil {
+		case item := <-c.writeChan:
+			// Check if item implements MessageSetConvertible
+			convertible, ok := item.(MessageSetConvertible)
+			if !ok {
+				c.setError(fmt.Errorf("unexpected message type: %T", item))
+				return
+			}
+
+			// Convert to MessageSet
+			msgSet := convertible.ToMessageSet()
+
+			// Encode the message set
+			data, err := codec.MarshalMessages(msgSet)
+			if err != nil {
+				c.setError(fmt.Errorf("marshal error: %w", err))
+				return
+			}
+
+			// Write to stream
+			if _, err := c.controlStream.Write(data); err != nil {
 				c.setError(fmt.Errorf("write error: %w", err))
 				return
 			}

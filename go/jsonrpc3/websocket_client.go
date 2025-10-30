@@ -197,7 +197,8 @@ func (c *WebSocketClient) CallRef(ref string, method string, params any, result 
 
 	// Encode and send request
 	codec := GetCodec(c.contentType)
-	reqData, err := codec.Marshal(req)
+	msgSet := req.ToMessageSet()
+	reqData, err := codec.MarshalMessages(msgSet)
 	if err != nil {
 		return fmt.Errorf("failed to encode request: %w", err)
 	}
@@ -261,7 +262,8 @@ func (c *WebSocketClient) NotifyRef(ref string, method string, params any) error
 
 	// Encode and send
 	codec := GetCodec(c.contentType)
-	reqData, err := codec.Marshal(req)
+	msgSet := req.ToMessageSet()
+	reqData, err := codec.MarshalMessages(msgSet)
 	if err != nil {
 		return fmt.Errorf("failed to encode notification: %w", err)
 	}
@@ -345,26 +347,34 @@ func (c *WebSocketClient) readLoop() {
 			continue
 		}
 
-		// Decode as Message
-		var msg Message
-		if err := codec.Unmarshal(data, &msg); err != nil {
+		// Decode as MessageSet
+		msgSet, err := codec.UnmarshalMessages(data)
+		if err != nil {
 			// Invalid message, ignore
 			continue
 		}
 
+		// Process single message (WebSocket doesn't support batch)
+		if len(msgSet.Messages) != 1 {
+			continue
+		}
+
+		msg := &msgSet.Messages[0]
+		msg.SetFormat(c.contentType)
+
 		// Dispatch based on message type
 		if msg.IsRequest() {
 			// Incoming request from server
-			go c.handleIncomingRequest(&msg, codec)
+			go c.handleIncomingRequest(msg)
 		} else if msg.IsResponse() {
 			// Response to our request
-			c.handleIncomingResponse(&msg)
+			c.handleIncomingResponse(msg)
 		}
 	}
 }
 
 // handleIncomingRequest processes an incoming request from the server.
-func (c *WebSocketClient) handleIncomingRequest(msg *Message, codec Codec) {
+func (c *WebSocketClient) handleIncomingRequest(msg *Message) {
 	req := msg.ToRequest()
 	if req == nil {
 		return
@@ -377,7 +387,9 @@ func (c *WebSocketClient) handleIncomingRequest(msg *Message, codec Codec) {
 
 	// Send response if not a notification
 	if resp != nil {
-		respData, err := codec.Marshal(resp)
+		codec := GetCodec(c.contentType)
+		msgSet := resp.ToMessageSet()
+		respData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
 			return
 		}

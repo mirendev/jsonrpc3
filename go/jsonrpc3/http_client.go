@@ -225,7 +225,8 @@ func (c *HTTPClient) CallRef(ref string, method string, params any, result any) 
 
 		// Encode request
 		codec := GetCodec(format)
-		reqData, err := codec.Marshal(req)
+		msgSet := req.ToMessageSet()
+		reqData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
 			return fmt.Errorf("failed to encode request: %w", err)
 		}
@@ -266,9 +267,18 @@ func (c *HTTPClient) CallRef(ref string, method string, params any, result any) 
 		}
 
 		// Decode response
-		var resp Response
-		if err := codec.Unmarshal(respData, &resp); err != nil {
+		msgSet, err = codec.UnmarshalMessages(respData)
+		if err != nil {
 			return fmt.Errorf("failed to decode response: %w", err)
+		}
+
+		if len(msgSet.Messages) != 1 {
+			return fmt.Errorf("expected single response, got %d messages", len(msgSet.Messages))
+		}
+
+		resp := msgSet.Messages[0].ToResponse()
+		if resp == nil {
+			return fmt.Errorf("invalid response message")
 		}
 
 		// Success - update client's format preference for future requests
@@ -329,14 +339,15 @@ func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, r
 			dataLine = line[6:] // Skip "data: " prefix
 		} else if line == "" && dataLine != "" {
 			// Blank line indicates end of event
-			// Decode as Message to determine if it's a request or response
-			var msg Message
-			if err := codec.Unmarshal([]byte(dataLine), &msg); err == nil {
+			// Decode as MessageSet to determine if it's a request or response
+			msgSet, err := codec.UnmarshalMessages([]byte(dataLine))
+			if err == nil && len(msgSet.Messages) > 0 {
+				msg := &msgSet.Messages[0]
 				if msg.IsNotification() {
 					// It's a notification - dispatch to local callback
 					if handler != nil {
 						req := msg.ToRequest()
-						req.format = format
+						req.SetFormat(format)
 						resp := handler.HandleRequest(req)
 						// resp will be nil for notifications, which is expected
 						_ = resp
@@ -406,7 +417,8 @@ func (c *HTTPClient) NotifyRef(ref string, method string, params any) error {
 
 		// Encode request
 		codec := GetCodec(format)
-		reqData, err := codec.Marshal(req)
+		msgSet := req.ToMessageSet()
+		reqData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
 			return fmt.Errorf("failed to encode notification: %w", err)
 		}
@@ -492,7 +504,8 @@ func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
 
 		// Encode batch
 		codec := GetCodec(format)
-		reqData, err := codec.Marshal(batch)
+		msgSet := batch.ToMessageSet()
+		reqData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encode batch: %w", err)
 		}
@@ -536,9 +549,14 @@ func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
 		}
 
 		// Decode batch response
-		var batchResp BatchResponse
-		if err := codec.Unmarshal(respData, &batchResp); err != nil {
+		msgSet, err = codec.UnmarshalMessages(respData)
+		if err != nil {
 			return nil, fmt.Errorf("failed to decode batch response: %w", err)
+		}
+
+		batchResp, err := msgSet.ToBatchResponse()
+		if err != nil {
+			return nil, fmt.Errorf("invalid batch response: %w", err)
 		}
 
 		// Success - update client's format preference

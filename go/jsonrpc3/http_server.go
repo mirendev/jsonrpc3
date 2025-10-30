@@ -426,9 +426,10 @@ func (h *HTTPHandler) handleSSERequest(w http.ResponseWriter, r *http.Request,
 	resp := handler.HandleRequest(req)
 
 	// Encode and send result as SSE event
-	codec := GetCodec(contentType)
 	if resp != nil {
-		respData, err := codec.Marshal(resp)
+		msgSet := resp.ToMessageSet()
+		codec := GetCodec(contentType)
+		respData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
 			// Can't send error response at this point, connection is already open
 			return

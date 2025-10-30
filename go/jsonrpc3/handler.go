@@ -4,8 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
-
-	"github.com/fxamacker/cbor/v2"
 )
 
 // Handler dispatches JSON-RPC requests to Object handlers.
@@ -303,110 +301,25 @@ func (h *Handler) errorResponse(id any, err *Error) *Response {
 //
 // Returns (request, batch, isBatch, error).
 func DecodeRequest(data []byte, mimetype string) (*Request, Batch, bool, error) {
-	mt := ParseMimeType(mimetype)
-
-	if mt.IsCBOR() {
-		return decodeRequestCBOR(data, mt)
-	}
-
-	// Default to JSON for backward compatibility
-	return decodeRequestJSON(data)
-}
-
-// decodeRequestJSON decodes a JSON-RPC request from JSON bytes.
-func decodeRequestJSON(data []byte) (*Request, Batch, bool, error) {
-	// Try to detect if this is a batch by checking the first non-whitespace character
-	for _, b := range data {
-		if b == ' ' || b == '\t' || b == '\n' || b == '\r' {
-			continue
-		}
-		if b == '[' {
-			// This is a batch
-			var batch Batch
-			if err := json.Unmarshal(data, &batch); err != nil {
-				return nil, nil, false, err
-			}
-			// Set format for all requests in batch
-			for i := range batch {
-				batch[i].SetFormat("application/json")
-			}
-			return nil, batch, true, nil
-		}
-		break
-	}
-
-	// This is a single request
-	var req Request
-	if err := json.Unmarshal(data, &req); err != nil {
-		return nil, nil, false, err
-	}
-	req.SetFormat("application/json")
-	return &req, nil, false, nil
-}
-
-// decodeRequestCBOR decodes a JSON-RPC request from CBOR bytes.
-// Handles both standard CBOR (string keys) and compact CBOR (integer keys)
-// based on the mimetype format parameter.
-func decodeRequestCBOR(data []byte, mt MimeType) (*Request, Batch, bool, error) {
-	if mt.IsCompact() {
-		// Decode compact CBOR with integer keys
-		return decodeRequestCompactCBOR(data)
-	}
-
-	// Decode standard CBOR with string keys
-	return decodeRequestStandardCBOR(data)
-}
-
-// decodeRequestStandardCBOR decodes standard CBOR with string keys
-func decodeRequestStandardCBOR(data []byte) (*Request, Batch, bool, error) {
-	// Try to decode as a CBOR array (batch)
-	var batch Batch
-	if err := cbor.Unmarshal(data, &batch); err == nil && len(batch) > 0 {
-		// Check if it's actually a batch by verifying the first element looks like a request
-		if batch[0].Method != "" {
-			// Set format for all requests in batch
-			for i := range batch {
-				batch[i].SetFormat("application/cbor")
-			}
-			return nil, batch, true, nil
-		}
-	}
-
-	// Try as a single request
-	var req Request
-	if err := cbor.Unmarshal(data, &req); err != nil {
-		return nil, nil, false, err
-	}
-	req.SetFormat("application/cbor")
-	return &req, nil, false, nil
-}
-
-// decodeRequestCompactCBOR decodes compact CBOR with integer keys
-func decodeRequestCompactCBOR(data []byte) (*Request, Batch, bool, error) {
-	// Try to decode as a CBOR array (batch)
-	var compactBatch []compactRequest
-	if err := cbor.Unmarshal(data, &compactBatch); err == nil && len(compactBatch) > 0 {
-		// Check if it's actually a batch by verifying the first element looks like a request
-		if compactBatch[0].Method != "" {
-			// Convert compact batch to standard batch
-			batch := make(Batch, len(compactBatch))
-			for i, cr := range compactBatch {
-				batch[i] = *fromCompactRequest(&cr)
-				batch[i].SetFormat("application/cbor; format=compact")
-			}
-			return nil, batch, true, nil
-		}
-	}
-
-	// Try as a single request
-	var compactReq compactRequest
-	if err := cbor.Unmarshal(data, &compactReq); err != nil {
+	codec := GetCodec(mimetype)
+	msgSet, err := codec.UnmarshalMessages(data)
+	if err != nil {
 		return nil, nil, false, err
 	}
 
-	req := fromCompactRequest(&compactReq)
-	req.SetFormat("application/cbor; format=compact")
-	return req, nil, false, nil
+	// Set format on all messages
+	for i := range msgSet.Messages {
+		msgSet.Messages[i].SetFormat(mimetype)
+	}
+
+	// Check if this was originally a batch (JSON/CBOR array)
+	if !msgSet.IsBatch {
+		req, err := msgSet.ToRequest()
+		return req, nil, false, err
+	}
+
+	batch, err := msgSet.ToBatch()
+	return nil, batch, true, err
 }
 
 // EncodeResponseWithFormat encodes a response using the specified mimetype.
@@ -415,16 +328,9 @@ func decodeRequestCompactCBOR(data []byte) (*Request, Batch, bool, error) {
 //   - "application/cbor": Standard CBOR encoding (string keys)
 //   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
 func EncodeResponseWithFormat(resp *Response, mimetype string) ([]byte, error) {
-	mt := ParseMimeType(mimetype)
+	msgSet := resp.ToMessageSet()
 	codec := GetCodec(mimetype)
-
-	if mt.IsCBOR() && mt.IsCompact() {
-		// Convert to compact format with integer keys
-		compactResp := toCompactResponse(resp)
-		return codec.Marshal(compactResp)
-	}
-
-	return codec.Marshal(resp)
+	return codec.MarshalMessages(msgSet)
 }
 
 // EncodeBatchResponseWithFormat encodes a batch response using the specified mimetype.
@@ -433,17 +339,7 @@ func EncodeResponseWithFormat(resp *Response, mimetype string) ([]byte, error) {
 //   - "application/cbor": Standard CBOR encoding (string keys)
 //   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
 func EncodeBatchResponseWithFormat(batch BatchResponse, mimetype string) ([]byte, error) {
-	mt := ParseMimeType(mimetype)
+	msgSet := batch.ToMessageSet()
 	codec := GetCodec(mimetype)
-
-	if mt.IsCBOR() && mt.IsCompact() {
-		// Convert batch to compact format with integer keys
-		compactBatch := make([]compactResponse, len(batch))
-		for i, resp := range batch {
-			compactBatch[i] = *toCompactResponse(&resp)
-		}
-		return codec.Marshal(compactBatch)
-	}
-
-	return codec.Marshal(batch)
+	return codec.MarshalMessages(msgSet)
 }

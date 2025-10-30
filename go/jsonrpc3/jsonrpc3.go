@@ -26,18 +26,18 @@ const (
 
 // JSON-RPC 3.0 extended error codes
 const (
-	CodeInvalidReference = -32001
-	CodeReferenceNotFound = -32002
+	CodeInvalidReference   = -32001
+	CodeReferenceNotFound  = -32002
 	CodeReferenceTypeError = -32003
 )
 
 // Request represents a JSON-RPC request message.
 type Request struct {
 	JSONRPC string     `json:"jsonrpc"`
-	Ref     string     `json:"ref,omitempty"`     // Remote reference to invoke method on
+	Ref     string     `json:"ref,omitempty"` // Remote reference to invoke method on
 	Method  string     `json:"method"`
 	Params  RawMessage `json:"params,omitempty"`
-	ID      any        `json:"id,omitempty"`      // Can be string, number, or null
+	ID      any        `json:"id,omitempty"` // Can be string, number, or null
 	format  string     // mimetype format (not serialized)
 }
 
@@ -91,12 +91,13 @@ func (e *Error) Error() string {
 // using ToRequest() or ToResponse().
 type Message struct {
 	JSONRPC string     `json:"jsonrpc"`
-	Ref     string     `json:"ref,omitempty"`     // Request field
-	Method  string     `json:"method,omitempty"`  // Request field
-	Params  RawMessage `json:"params,omitempty"`  // Request field
-	Result  RawMessage `json:"result,omitempty"`  // Response field
-	Error   *Error     `json:"error,omitempty"`   // Response field
-	ID      any        `json:"id,omitempty"`      // Both request and response
+	Ref     string     `json:"ref,omitempty"`    // Request field
+	Method  string     `json:"method,omitempty"` // Request field
+	Params  RawMessage `json:"params,omitempty"` // Request field
+	Result  RawMessage `json:"result,omitempty"` // Response field
+	Error   *Error     `json:"error,omitempty"`  // Response field
+	ID      any        `json:"id,omitempty"`     // Both request and response
+	format  string     // mimetype format (not serialized)
 }
 
 // IsRequest returns true if this message is a request (has method field).
@@ -114,19 +115,26 @@ func (m *Message) IsNotification() bool {
 	return m.IsRequest() && m.ID == nil
 }
 
+// SetFormat sets the format field for tracking the encoding mimetype.
+func (m *Message) SetFormat(mimetype string) {
+	m.format = mimetype
+}
+
 // ToRequest converts this message to a Request.
 // Returns nil if this is not a request message.
 func (m *Message) ToRequest() *Request {
 	if !m.IsRequest() {
 		return nil
 	}
-	return &Request{
+	req := &Request{
 		JSONRPC: m.JSONRPC,
 		Ref:     m.Ref,
 		Method:  m.Method,
 		Params:  m.Params,
 		ID:      m.ID,
 	}
+	req.SetFormat(m.format)
+	return req
 }
 
 // ToResponse converts this message to a Response.
@@ -141,6 +149,157 @@ func (m *Message) ToResponse() *Response {
 		Error:   m.Error,
 		ID:      m.ID,
 	}
+}
+
+// MessageSet represents one or more messages for encoding/decoding.
+// A batch of 1 is treated the same as a non-batch for encoding purposes.
+type MessageSet struct {
+	Messages []Message
+	IsBatch  bool // True if originally decoded from a JSON/CBOR array
+}
+
+// MessageSetConvertible is an interface for types that can be converted to MessageSet.
+// This allows polymorphic handling of Request, Response, and BatchResponse in writeLoops.
+type MessageSetConvertible interface {
+	ToMessageSet() MessageSet
+}
+
+// ToMessageSet converts a Request to a MessageSet.
+func (r *Request) ToMessageSet() MessageSet {
+	return MessageSet{
+		Messages: []Message{{
+			JSONRPC: r.JSONRPC,
+			Ref:     r.Ref,
+			Method:  r.Method,
+			Params:  r.Params,
+			ID:      r.ID,
+		}},
+		IsBatch: false,
+	}
+}
+
+// ToMessageSet converts a Response to a MessageSet.
+func (r *Response) ToMessageSet() MessageSet {
+	return MessageSet{
+		Messages: []Message{{
+			JSONRPC: r.JSONRPC,
+			Result:  r.Result,
+			Error:   r.Error,
+			ID:      r.ID,
+		}},
+		IsBatch: false,
+	}
+}
+
+// ToMessageSet converts a BatchResponse to a MessageSet.
+func (b BatchResponse) ToMessageSet() MessageSet {
+	messages := make([]Message, len(b))
+	for i, resp := range b {
+		messages[i] = Message{
+			JSONRPC: resp.JSONRPC,
+			Result:  resp.Result,
+			Error:   resp.Error,
+			ID:      resp.ID,
+		}
+	}
+	return MessageSet{
+		Messages: messages,
+		IsBatch:  true,
+	}
+}
+
+// NewMessageSetFromRequest creates a MessageSet from a single Request.
+func NewMessageSetFromRequest(req *Request) MessageSet {
+	return MessageSet{
+		Messages: []Message{{
+			JSONRPC: req.JSONRPC,
+			Ref:     req.Ref,
+			Method:  req.Method,
+			Params:  req.Params,
+			ID:      req.ID,
+		}},
+		IsBatch: false,
+	}
+}
+
+// ToRequest extracts a single Request from the MessageSet.
+// Returns an error if the MessageSet doesn't contain exactly one request message.
+func (ms MessageSet) ToRequest() (*Request, error) {
+	if len(ms.Messages) != 1 {
+		return nil, fmt.Errorf("MessageSet contains %d messages, expected 1", len(ms.Messages))
+	}
+
+	msg := &ms.Messages[0]
+	if !msg.IsRequest() {
+		return nil, fmt.Errorf("message is not a request")
+	}
+
+	return &Request{
+		JSONRPC: msg.JSONRPC,
+		Ref:     msg.Ref,
+		Method:  msg.Method,
+		Params:  msg.Params,
+		ID:      msg.ID,
+		format:  msg.format,
+	}, nil
+}
+
+// ToBatch extracts a batch of Requests from the MessageSet.
+// Returns an error if any message is not a request.
+func (ms MessageSet) ToBatch() (Batch, error) {
+	batch := make(Batch, len(ms.Messages))
+	for i, msg := range ms.Messages {
+		if !msg.IsRequest() {
+			return nil, fmt.Errorf("message at index %d is not a request", i)
+		}
+		batch[i] = Request{
+			JSONRPC: msg.JSONRPC,
+			Ref:     msg.Ref,
+			Method:  msg.Method,
+			Params:  msg.Params,
+			ID:      msg.ID,
+			format:  msg.format,
+		}
+	}
+	return batch, nil
+}
+
+// ToResponse extracts a single Response from the MessageSet.
+// Returns an error if the MessageSet doesn't contain exactly one response message.
+func (ms MessageSet) ToResponse() (*Response, error) {
+	if len(ms.Messages) != 1 {
+		return nil, fmt.Errorf("MessageSet contains %d messages, expected 1", len(ms.Messages))
+	}
+
+	msg := &ms.Messages[0]
+	if !msg.IsResponse() {
+		return nil, fmt.Errorf("message is not a response")
+	}
+
+	return &Response{
+		JSONRPC: msg.JSONRPC,
+		Result:  msg.Result,
+		Error:   msg.Error,
+		ID:      msg.ID,
+	}, nil
+}
+
+// ToBatchResponse extracts a batch of Responses from the MessageSet.
+// Returns an error if any message is not a response.
+func (ms MessageSet) ToBatchResponse() (BatchResponse, error) {
+	batch := make(BatchResponse, len(ms.Messages))
+	for i, msg := range ms.Messages {
+		if !msg.IsResponse() {
+			return nil, fmt.Errorf("message at index %d is not a response", i)
+		}
+		batch[i] = Response{
+			JSONRPC: msg.JSONRPC,
+			Result:  msg.Result,
+			Error:   msg.Error,
+			ID:      msg.ID,
+		}
+	}
+	return batch, nil
 }
 
 // Standard error constructors
@@ -252,6 +411,24 @@ func NewParamsWithFormat(data RawMessage, mimetype string) Params {
 
 // Batch represents a batch request (array of requests).
 type Batch []Request
+
+// ToMessageSet converts a Batch to a MessageSet.
+func (b Batch) ToMessageSet() MessageSet {
+	messages := make([]Message, len(b))
+	for i, req := range b {
+		messages[i] = Message{
+			JSONRPC: req.JSONRPC,
+			Ref:     req.Ref,
+			Method:  req.Method,
+			Params:  req.Params,
+			ID:      req.ID,
+		}
+	}
+	return MessageSet{
+		Messages: messages,
+		IsBatch:  true,
+	}
+}
 
 // BatchResponse represents a batch response (array of responses).
 type BatchResponse []Response
