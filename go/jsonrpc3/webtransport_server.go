@@ -120,7 +120,7 @@ type WebTransportConn struct {
 	nextID      atomic.Int64
 
 	// Message channels
-	writeChan chan []byte
+	writeChan chan any // Messages to encode and send
 	closeChan chan struct{}
 	closeOnce sync.Once
 
@@ -139,7 +139,7 @@ func newWebTransportConn(session *webtransport.Session, rootObject Object, conte
 		wtSession:   wtSession,
 		handler:     handler,
 		contentType: contentType,
-		writeChan:   make(chan []byte, 100),
+		writeChan:   make(chan any, 100),
 		closeChan:   make(chan struct{}),
 	}
 }
@@ -175,8 +175,12 @@ func (c *WebTransportConn) handleWithCallback(onReady func(*WebTransportConn)) {
 }
 
 // Call invokes a method on the client and waits for the response.
-// This allows the server to initiate calls to the client.
-func (c *WebTransportConn) Call(ref string, method string, params any, result any) error {
+func (c *WebTransportConn) Call(method string, params any, result any) error {
+	return c.CallRef("", method, params, result)
+}
+
+// CallRef invokes a method on a remote reference and waits for the response.
+func (c *WebTransportConn) CallRef(ref string, method string, params any, result any) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
@@ -201,16 +205,9 @@ func (c *WebTransportConn) Call(ref string, method string, params any, result an
 	c.pendingReqs.Store(id, respChan)
 	defer c.pendingReqs.Delete(id)
 
-	// Encode and send request
-	codec := GetCodec(c.contentType)
-	reqData, err := codec.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to encode request: %w", err)
-	}
-
-	// Send via write channel
+	// Send request via write channel (will be encoded in writeLoop)
 	select {
-	case c.writeChan <- reqData:
+	case c.writeChan <- req:
 	case <-c.closeChan:
 		return fmt.Errorf("connection closed")
 	}
@@ -240,7 +237,12 @@ func (c *WebTransportConn) Call(ref string, method string, params any, result an
 }
 
 // Notify sends a notification to the client (no response expected).
-func (c *WebTransportConn) Notify(ref string, method string, params any) error {
+func (c *WebTransportConn) Notify(method string, params any) error {
+	return c.NotifyRef("", method, params)
+}
+
+// NotifyRef sends a notification to a remote reference.
+func (c *WebTransportConn) NotifyRef(ref string, method string, params any) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
@@ -256,16 +258,9 @@ func (c *WebTransportConn) Notify(ref string, method string, params any) error {
 		req.Ref = ref
 	}
 
-	// Encode and send
-	codec := GetCodec(c.contentType)
-	reqData, err := codec.Marshal(req)
-	if err != nil {
-		return fmt.Errorf("failed to encode notification: %w", err)
-	}
-
-	// Send via write channel
+	// Send notification via write channel (will be encoded in writeLoop)
 	select {
-	case c.writeChan <- reqData:
+	case c.writeChan <- req:
 		return nil
 	case <-c.closeChan:
 		return fmt.Errorf("connection closed")
@@ -274,12 +269,12 @@ func (c *WebTransportConn) Notify(ref string, method string, params any) error {
 
 // RegisterObject registers a server object that the client can call.
 func (c *WebTransportConn) RegisterObject(ref string, obj Object) {
-	c.handler.AddObject(ref, obj)
+	c.handler.session.AddLocalRef(ref, obj)
 }
 
 // UnregisterObject removes a registered server object.
 func (c *WebTransportConn) UnregisterObject(ref string) {
-	c.handler.RemoveObject(ref)
+	c.handler.session.RemoveLocalRef(ref)
 }
 
 // GetSession returns the connection's session.
@@ -323,6 +318,7 @@ func (c *WebTransportConn) readLoop() {
 	defer c.Close()
 
 	codec := GetCodec(c.contentType)
+	decoder := codec.NewDecoder(c.controlStream)
 
 	for {
 		select {
@@ -331,24 +327,17 @@ func (c *WebTransportConn) readLoop() {
 		default:
 		}
 
-		// Read framed message
-		data, err := readFramedMessage(c.controlStream)
-		if err != nil {
+		// Decode message from stream
+		var msg Message
+		if err := decoder.Decode(&msg); err != nil {
 			c.setError(fmt.Errorf("read error: %w", err))
 			return
-		}
-
-		// Decode as Message
-		var msg Message
-		if err := codec.Unmarshal(data, &msg); err != nil {
-			// Invalid message, ignore
-			continue
 		}
 
 		// Dispatch based on message type
 		if msg.IsRequest() {
 			// Incoming request from client
-			go c.handleIncomingRequest(&msg, codec)
+			go c.handleIncomingRequest(&msg)
 		} else if msg.IsResponse() {
 			// Response to our request
 			c.handleIncomingResponse(&msg)
@@ -357,7 +346,7 @@ func (c *WebTransportConn) readLoop() {
 }
 
 // handleIncomingRequest processes an incoming request from the client.
-func (c *WebTransportConn) handleIncomingRequest(msg *Message, codec Codec) {
+func (c *WebTransportConn) handleIncomingRequest(msg *Message) {
 	req := msg.ToRequest()
 	if req == nil {
 		return
@@ -368,15 +357,10 @@ func (c *WebTransportConn) handleIncomingRequest(msg *Message, codec Codec) {
 	// Handle request via handler
 	resp := c.handler.HandleRequest(req)
 
-	// Send response if not a notification
+	// Send response if not a notification (will be encoded in writeLoop)
 	if resp != nil {
-		respData, err := codec.Marshal(resp)
-		if err != nil {
-			return
-		}
-
 		select {
-		case c.writeChan <- respData:
+		case c.writeChan <- resp:
 		case <-c.closeChan:
 		}
 	}
@@ -403,10 +387,13 @@ func (c *WebTransportConn) handleIncomingResponse(msg *Message) {
 
 // writeLoop continuously sends queued messages to the control stream.
 func (c *WebTransportConn) writeLoop() {
+	codec := GetCodec(c.contentType)
+	encoder := codec.NewEncoder(c.controlStream)
+
 	for {
 		select {
-		case data := <-c.writeChan:
-			if err := writeFramedMessage(c.controlStream, data); err != nil {
+		case msg := <-c.writeChan:
+			if err := encoder.Encode(msg); err != nil {
 				c.setError(fmt.Errorf("write error: %w", err))
 				return
 			}

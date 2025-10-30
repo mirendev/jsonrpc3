@@ -9,6 +9,26 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
+// bothLifecycleCounter implements both Dispose and Close
+type bothLifecycleCounter struct {
+	disposeCount int
+	closeCount   int
+}
+
+func (c *bothLifecycleCounter) CallMethod(method string, params Params) (any, error) {
+	return nil, NewMethodNotFoundError(method)
+}
+
+func (c *bothLifecycleCounter) Dispose() error {
+	c.disposeCount++
+	return nil
+}
+
+func (c *bothLifecycleCounter) Close() error {
+	c.closeCount++
+	return nil
+}
+
 // disposableCounter tracks Dispose calls
 type disposableCounter struct {
 	value         int
@@ -116,19 +136,16 @@ func TestLifecycle_DisposeAll(t *testing.T) {
 func TestLifecycle_PreferDispose(t *testing.T) {
 	session := NewSession()
 
-	// Object that implements both
-	obj := &struct {
-		disposableCounter
-		closeableCounter
-	}{}
+	// Object that implements both Dispose and Close
+	obj := &bothLifecycleCounter{}
 
 	session.AddLocalRef("ref-1", obj)
 
 	// Remove ref - should call Dispose() but not Close()
 	session.RemoveLocalRef("ref-1")
 
-	assert.Equal(t, 1, obj.disposableCounter.disposeCount, "Dispose should be called")
-	assert.Equal(t, 0, obj.closeableCounter.closeCount, "Close should NOT be called when Dispose exists")
+	assert.Equal(t, 1, obj.disposeCount, "Dispose should be called")
+	assert.Equal(t, 0, obj.closeCount, "Close should NOT be called when Dispose exists")
 }
 
 // TestLifecycle_HTTPDelete verifies DELETE calls dispose

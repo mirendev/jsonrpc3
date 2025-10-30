@@ -113,8 +113,8 @@ func TestIntegration_ProtocolMethods(t *testing.T) {
 	handler := NewHandler(session, root, []string{"application/json", "application/cbor"})
 
 	// Add some references
-	session.AddLocalRef("obj-1", "test1")
-	session.AddLocalRef("obj-2", "test2")
+	session.AddLocalRef("obj-1", &dummyObject{name: "test1"})
+	session.AddLocalRef("obj-2", &dummyObject{name: "test2"})
 	session.AddRemoteRef("remote-1", nil)
 
 	// Get session ID

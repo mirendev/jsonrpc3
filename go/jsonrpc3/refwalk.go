@@ -32,7 +32,7 @@ func walkValue(handler *Handler, v reflect.Value) reflect.Value {
 		if obj, ok := iface.(Object); ok {
 			// Generate ref ID and register the object with handler
 			ref := handler.session.GenerateRefID()
-			handler.AddObject(ref, obj)
+			handler.session.AddLocalRef(ref, obj)
 			return reflect.ValueOf(NewLocalReference(ref))
 		}
 

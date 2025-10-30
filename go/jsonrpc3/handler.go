@@ -12,9 +12,8 @@ import (
 type Handler struct {
 	session    *Session
 	protocol   *ProtocolHandler
-	rootObject Object            // Handles top-level method calls
-	objects    map[string]Object // ref => Object for reference calls
-	version    string            // Default version for responses
+	rootObject Object // Handles top-level method calls
+	version    string // Default version for responses
 }
 
 // NewHandler creates a new handler for a session.
@@ -27,7 +26,6 @@ func NewHandler(session *Session, rootObject Object, mimeTypes []string) *Handle
 		session:    session,
 		protocol:   NewProtocolHandler(session, mimeTypes),
 		rootObject: rootObject,
-		objects:    make(map[string]Object),
 		version:    Version30,
 	}
 }
@@ -35,18 +33,6 @@ func NewHandler(session *Session, rootObject Object, mimeTypes []string) *Handle
 // SetVersion sets the default JSON-RPC version for responses.
 func (h *Handler) SetVersion(version string) {
 	h.version = version
-}
-
-// AddObject registers an object to handle method calls on the given reference.
-func (h *Handler) AddObject(ref string, obj Object) {
-	h.objects[ref] = obj
-	h.session.AddLocalRef(ref, obj)
-}
-
-// RemoveObject unregisters an object for the given reference.
-func (h *Handler) RemoveObject(ref string) {
-	delete(h.objects, ref)
-	h.session.RemoveLocalRef(ref)
 }
 
 // HandleRequest processes a single request and returns a response.
@@ -142,9 +128,9 @@ func (h *Handler) handleMethod(req *Request) *Response {
 
 // handleRefMethod handles a method call on a reference.
 func (h *Handler) handleRefMethod(req *Request) *Response {
-	// Look up the object
-	obj, exists := h.objects[req.Ref]
-	if !exists {
+	// Look up the object in session
+	obj := h.session.GetLocalRef(req.Ref)
+	if obj == nil {
 		return h.errorResponse(req.ID, NewReferenceNotFoundError(req.Ref))
 	}
 
@@ -314,6 +300,7 @@ func (h *Handler) errorResponse(id any, err *Error) *Response {
 //   - "application/json": JSON encoding
 //   - "application/cbor": Standard CBOR encoding (string keys)
 //   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
+//
 // Returns (request, batch, isBatch, error).
 func DecodeRequest(data []byte, mimetype string) (*Request, Batch, bool, error) {
 	mt := ParseMimeType(mimetype)
@@ -422,12 +409,6 @@ func decodeRequestCompactCBOR(data []byte) (*Request, Batch, bool, error) {
 	return req, nil, false, nil
 }
 
-// EncodeResponse encodes a response to JSON.
-// For CBOR encoding, use EncodeResponseWithFormat.
-func EncodeResponse(resp *Response) ([]byte, error) {
-	return json.Marshal(resp)
-}
-
 // EncodeResponseWithFormat encodes a response using the specified mimetype.
 // Supported mimetypes:
 //   - "application/json": JSON encoding
@@ -444,12 +425,6 @@ func EncodeResponseWithFormat(resp *Response, mimetype string) ([]byte, error) {
 	}
 
 	return codec.Marshal(resp)
-}
-
-// EncodeBatchResponse encodes a batch response to JSON.
-// For CBOR encoding, use EncodeBatchResponseWithFormat.
-func EncodeBatchResponse(batch BatchResponse) ([]byte, error) {
-	return json.Marshal(batch)
 }
 
 // EncodeBatchResponseWithFormat encodes a batch response using the specified mimetype.

@@ -9,6 +9,15 @@ import (
 	"github.com/evanphx/jsonrpc3"
 )
 
+// exampleObject is a simple Object implementation for examples.
+type exampleObject struct {
+	name string
+}
+
+func (e *exampleObject) CallMethod(method string, params jsonrpc3.Params) (any, error) {
+	return nil, jsonrpc3.NewMethodNotFoundError(method)
+}
+
 // Example_basicMethod demonstrates registering and calling a method.
 func Example_basicMethod() {
 	session := jsonrpc3.NewSession()
@@ -149,7 +158,7 @@ func Example_protocolMethods() {
 	handler := jsonrpc3.NewHandler(session, root, []string{"application/json"})
 
 	// Add some test references
-	session.AddLocalRef("obj-1", "test-object")
+	session.AddLocalRef("obj-1", &exampleObject{name: "test-object"})
 
 	// Get session ID
 	req1, _ := jsonrpc3.NewRequestWithRef("$rpc", "session_id", nil, 1)

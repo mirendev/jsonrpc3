@@ -6,6 +6,15 @@ import (
 	"time"
 )
 
+// simpleObject is a simple Object implementation for session testing.
+type simpleObject struct {
+	value any
+}
+
+func (s *simpleObject) CallMethod(method string, params Params) (any, error) {
+	return nil, NewMethodNotFoundError(method)
+}
+
 func TestNewSession(t *testing.T) {
 	s := NewSession()
 	if s == nil {
@@ -45,7 +54,7 @@ func TestSession_LocalRefs(t *testing.T) {
 	s := NewSession()
 
 	// Test adding local ref
-	obj := "test-object"
+	obj := &simpleObject{value: "test-object"}
 	s.AddLocalRef("obj-1", obj)
 
 	// Test getting local ref
@@ -151,7 +160,7 @@ func TestSession_AddRemoteRefWithInfo(t *testing.T) {
 func TestSession_GetLocalRefInfo(t *testing.T) {
 	s := NewSession()
 
-	obj := "test-string"
+	obj := &simpleObject{value: "test-string"}
 	s.AddLocalRef("obj-1", obj)
 
 	info := s.GetLocalRefInfo("obj-1")
@@ -164,8 +173,8 @@ func TestSession_GetLocalRefInfo(t *testing.T) {
 	if info.Direction != "local" {
 		t.Errorf("Direction = %v, want local", info.Direction)
 	}
-	if info.Type != "string" {
-		t.Errorf("Type = %v, want string", info.Type)
+	if info.Type != "*jsonrpc3.simpleObject" {
+		t.Errorf("Type = %v, want *jsonrpc3.simpleObject", info.Type)
 	}
 
 	// Test non-existent ref
@@ -179,9 +188,9 @@ func TestSession_DisposeAll(t *testing.T) {
 	s := NewSession()
 
 	// Add some local refs
-	s.AddLocalRef("local-1", "obj1")
-	s.AddLocalRef("local-2", "obj2")
-	s.AddLocalRef("local-3", "obj3")
+	s.AddLocalRef("local-1", &simpleObject{value: "obj1"})
+	s.AddLocalRef("local-2", &simpleObject{value: "obj2"})
+	s.AddLocalRef("local-3", &simpleObject{value: "obj3"})
 
 	// Add some remote refs
 	s.AddRemoteRef("remote-1", nil)
@@ -218,7 +227,7 @@ func TestSession_ConcurrentAccess(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			ref := s.GenerateRefID()
-			s.AddLocalRef(ref, i)
+			s.AddLocalRef(ref, &simpleObject{value: i})
 		}(i)
 	}
 

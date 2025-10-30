@@ -379,7 +379,7 @@ func TestBatchLocalRef_MixedWithRegularRefs(t *testing.T) {
 	// Register a counter in the session
 	sessionCounter := &Counter{Value: 10}
 	handler := NewHandler(session, root, nil)
-	handler.AddObject("session-counter", sessionCounter)
+	session.AddLocalRef("session-counter", sessionCounter)
 
 	// Register method that creates a new counter
 	root.Register("createCounter", func(params Params) (any, error) {

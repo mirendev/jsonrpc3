@@ -277,12 +277,12 @@ func (c *WebSocketClient) NotifyRef(ref string, method string, params any) error
 
 // RegisterObject registers a local object that the server can call.
 func (c *WebSocketClient) RegisterObject(ref string, obj Object) {
-	c.handler.AddObject(ref, obj)
+	c.handler.session.AddLocalRef(ref, obj)
 }
 
 // UnregisterObject removes a registered local object.
 func (c *WebSocketClient) UnregisterObject(ref string) {
-	c.handler.RemoveObject(ref)
+	c.handler.session.RemoveLocalRef(ref)
 }
 
 // GetSession returns the client's session.

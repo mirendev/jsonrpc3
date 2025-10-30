@@ -18,7 +18,7 @@ type Session struct {
 	mu sync.RWMutex
 
 	// Local references are objects we control that the other party can call
-	localRefs map[string]any
+	localRefs map[string]Object
 
 	// Remote references are objects the other party controls that we received
 	remoteRefs map[string]*RefInfo
@@ -42,7 +42,7 @@ func NewSession() *Session {
 	return &Session{
 		id:         uuid.New().String(),
 		createdAt:  time.Now(),
-		localRefs:  make(map[string]any),
+		localRefs:  make(map[string]Object),
 		remoteRefs: make(map[string]*RefInfo),
 	}
 }
@@ -52,7 +52,7 @@ func NewSessionWithID(id string) *Session {
 	return &Session{
 		id:         id,
 		createdAt:  time.Now(),
-		localRefs:  make(map[string]any),
+		localRefs:  make(map[string]Object),
 		remoteRefs: make(map[string]*RefInfo),
 	}
 }
@@ -75,15 +75,25 @@ func (s *Session) GenerateRefID() string {
 
 // AddLocalRef adds a local reference (object we control).
 // Returns the reference ID.
-func (s *Session) AddLocalRef(ref string, obj any) {
+func (s *Session) AddLocalRef(ref string, obj Object) string {
+	if ref == "" {
+		ref = s.GenerateRefID()
+	}
+
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.localRefs[ref] = obj
+	return ref
+}
+
+// AddLocal adds a local reference with an auto-generated ID.
+func (s *Session) AddLocal(obj Object) string {
+	return s.AddLocalRef("", obj)
 }
 
 // GetLocalRef retrieves a local reference.
 // Returns nil if not found.
-func (s *Session) GetLocalRef(ref string) any {
+func (s *Session) GetLocalRef(ref string) Object {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.localRefs[ref]
@@ -100,6 +110,21 @@ func (s *Session) RemoveLocalRef(ref string) bool {
 		disposeObject(obj)
 		delete(s.localRefs, ref)
 		return true
+	}
+	return false
+}
+
+// RemoveObject removes a local reference by object instance.
+func (s *Session) RemoveObject(obj Object) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for ref, storedObj := range s.localRefs {
+		if storedObj == obj {
+			// Call lifecycle methods before removing
+			disposeObject(storedObj)
+			delete(s.localRefs, ref)
+			return true
+		}
 	}
 	return false
 }
@@ -202,7 +227,7 @@ func (s *Session) DisposeAll() (localCount, remoteCount int) {
 		disposeObject(obj)
 	}
 
-	s.localRefs = make(map[string]any)
+	s.localRefs = make(map[string]Object)
 	s.remoteRefs = make(map[string]*RefInfo)
 
 	return localCount, remoteCount

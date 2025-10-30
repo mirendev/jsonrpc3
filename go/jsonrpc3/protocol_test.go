@@ -45,7 +45,7 @@ func TestProtocolHandler_Dispose(t *testing.T) {
 	h := NewProtocolHandler(s, nil)
 
 	// Add a local ref
-	s.AddLocalRef("obj-1", "test")
+	s.AddLocalRef("obj-1", &dummyObject{name: "test"})
 
 	// Dispose it
 	params, _ := json.Marshal(DisposeParams{Ref: "obj-1"})
@@ -146,8 +146,8 @@ func TestProtocolHandler_ListRefs(t *testing.T) {
 	h := NewProtocolHandler(s, nil)
 
 	// Add some refs
-	s.AddLocalRef("local-1", "obj1")
-	s.AddLocalRef("local-2", "obj2")
+	s.AddLocalRef("local-1", &dummyObject{name: "obj1"})
+	s.AddLocalRef("local-2", &dummyObject{name: "obj2"})
 	s.AddRemoteRef("remote-1", nil)
 
 	result, err := h.CallMethod("list_refs", NewParams(nil))
@@ -194,7 +194,7 @@ func TestProtocolHandler_RefInfo(t *testing.T) {
 	h := NewProtocolHandler(s, nil)
 
 	// Add a local ref
-	s.AddLocalRef("obj-1", "test-string")
+	s.AddLocalRef("obj-1", &dummyObject{name: "test-string"})
 
 	params, _ := json.Marshal(RefInfoParams{Ref: "obj-1"})
 	result, err := h.CallMethod("ref_info", NewParams(params))
@@ -213,8 +213,8 @@ func TestProtocolHandler_RefInfo(t *testing.T) {
 	if info.Direction != "local" {
 		t.Errorf("Direction = %v, want local", info.Direction)
 	}
-	if info.Type != "string" {
-		t.Errorf("Type = %v, want string", info.Type)
+	if info.Type != "*jsonrpc3.dummyObject" {
+		t.Errorf("Type = %v, want *jsonrpc3.dummyObject", info.Type)
 	}
 	if info.Created == "" {
 		t.Error("Created should not be empty")
@@ -319,9 +319,9 @@ func TestProtocolHandler_DisposeAll(t *testing.T) {
 	h := NewProtocolHandler(s, nil)
 
 	// Add multiple refs
-	s.AddLocalRef("local-1", "obj1")
-	s.AddLocalRef("local-2", "obj2")
-	s.AddLocalRef("local-3", "obj3")
+	s.AddLocalRef("local-1", &dummyObject{name: "obj1"})
+	s.AddLocalRef("local-2", &dummyObject{name: "obj2"})
+	s.AddLocalRef("local-3", &dummyObject{name: "obj3"})
 	s.AddRemoteRef("remote-1", nil)
 	s.AddRemoteRef("remote-2", nil)
 

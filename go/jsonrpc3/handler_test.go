@@ -9,6 +9,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// dummyObject is a simple Object implementation for testing.
+type dummyObject struct {
+	name string
+}
+
+func (d *dummyObject) CallMethod(method string, params Params) (any, error) {
+	return nil, NewMethodNotFoundError(method)
+}
+
 // createTestHandler creates a handler with a MethodMap for testing
 func createTestHandler() (*Session, *MethodMap, *Handler) {
 	s := NewSession()
@@ -162,8 +171,8 @@ func TestHandler_RefMethod(t *testing.T) {
 		return counter.Value, nil
 	})
 
-	// Add to handler's objects map
-	h.AddObject("counter-1", counterObj)
+	// Add to session
+	s.AddLocalRef("counter-1", counterObj)
 
 	req := &Request{
 		JSONRPC: Version30,
@@ -200,11 +209,11 @@ func TestHandler_RefMethodNotFound(t *testing.T) {
 }
 
 func TestHandler_RefMethodHandlerNotFound(t *testing.T) {
-	_, _, h := createTestHandler()
+	s, _, h := createTestHandler()
 
 	// Add an object that will return method not found
 	obj := NewMethodMap()
-	h.AddObject("obj-1", obj)
+	s.AddLocalRef("obj-1", obj)
 
 	req := &Request{
 		JSONRPC: Version30,
@@ -241,7 +250,7 @@ func TestHandler_ProtocolMethod(t *testing.T) {
 func TestHandler_ProtocolMethodNotification(t *testing.T) {
 	s, _, h := createTestHandler()
 
-	s.AddLocalRef("obj-1", "test")
+	s.AddLocalRef("obj-1", &dummyObject{name: "test"})
 
 	req := &Request{
 		JSONRPC: Version30,
@@ -408,33 +417,4 @@ func TestDecodeRequest_Invalid(t *testing.T) {
 
 	_, _, _, err := DecodeRequest(data, "application/json")
 	assert.Error(t, err, "should have error for invalid JSON")
-}
-
-func TestEncodeResponse(t *testing.T) {
-	resp := &Response{
-		JSONRPC: Version30,
-		Result:  RawMessage(`"ok"`),
-		ID:      1,
-	}
-
-	data, err := EncodeResponse(resp)
-	require.NoError(t, err, "EncodeResponse() should not error")
-
-	var decoded Response
-	require.NoError(t, json.Unmarshal(data, &decoded), "should unmarshal encoded response")
-	assert.Equal(t, Version30, decoded.JSONRPC)
-}
-
-func TestEncodeBatchResponse(t *testing.T) {
-	batch := BatchResponse{
-		{JSONRPC: Version30, Result: RawMessage(`"ok1"`), ID: 1},
-		{JSONRPC: Version30, Result: RawMessage(`"ok2"`), ID: 2},
-	}
-
-	data, err := EncodeBatchResponse(batch)
-	require.NoError(t, err, "EncodeBatchResponse() should not error")
-
-	var decoded BatchResponse
-	require.NoError(t, json.Unmarshal(data, &decoded), "should unmarshal encoded batch")
-	assert.Len(t, decoded, 2)
 }

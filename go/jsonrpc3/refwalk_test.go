@@ -69,10 +69,10 @@ func TestProcessResult_Object(t *testing.T) {
 		t.Error("LocalReference should have non-empty Ref")
 	}
 
-	// Verify it was registered in handler.objects
-	obj, exists := h.objects[ref.Ref]
-	if !exists {
-		t.Error("Object should be registered in handler")
+	// Verify it was registered in session
+	obj := h.session.GetLocalRef(ref.Ref)
+	if obj == nil {
+		t.Error("Object should be registered in session")
 	}
 
 	// Verify it's the same object
@@ -110,7 +110,7 @@ func TestProcessResult_SliceWithObject(t *testing.T) {
 	ref1, ok := processedSlice[1].(LocalReference)
 	if !ok {
 		t.Errorf("element 1 should be LocalReference, got %T", processedSlice[1])
-	} else if _, exists := h.objects[ref1.Ref]; !exists {
+	} else if h.session.GetLocalRef(ref1.Ref) == nil {
 		t.Error("counter1 should be registered")
 	}
 
@@ -123,7 +123,7 @@ func TestProcessResult_SliceWithObject(t *testing.T) {
 	ref2, ok := processedSlice[3].(LocalReference)
 	if !ok {
 		t.Errorf("element 3 should be LocalReference, got %T", processedSlice[3])
-	} else if _, exists := h.objects[ref2.Ref]; !exists {
+	} else if h.session.GetLocalRef(ref2.Ref) == nil {
 		t.Error("counter2 should be registered")
 	}
 
@@ -162,8 +162,8 @@ func TestProcessResult_MapWithObject(t *testing.T) {
 	ref, ok := processedMap["counter"].(LocalReference)
 	if !ok {
 		t.Errorf("counter should be LocalReference, got %T", processedMap["counter"])
-	} else if _, exists := h.objects[ref.Ref]; !exists {
-		t.Error("counter should be registered in handler")
+	} else if h.session.GetLocalRef(ref.Ref) == nil {
+		t.Error("counter should be registered in session")
 	}
 
 	// Check value field
@@ -226,10 +226,10 @@ func TestProcessResult_NestedStructures(t *testing.T) {
 	// This is acceptable behavior as each occurrence is independent.
 
 	// Verify all registered
-	if _, exists := h.objects[ref1.Ref]; !exists {
+	if h.session.GetLocalRef(ref1.Ref) == nil {
 		t.Error("counter1 should be registered")
 	}
-	if _, exists := h.objects[ref2.Ref]; !exists {
+	if h.session.GetLocalRef(ref2.Ref) == nil {
 		t.Error("counter2 should be registered")
 	}
 }
@@ -296,9 +296,9 @@ func TestHandler_ObjectIntegration(t *testing.T) {
 		t.Error("expected non-empty reference")
 	}
 
-	// Verify object is registered in handler
-	if _, exists := h.objects[ref.Ref]; !exists {
-		t.Error("counter should be registered in handler")
+	// Verify object is registered in session
+	if h.session.GetLocalRef(ref.Ref) == nil {
+		t.Error("counter should be registered in session")
 	}
 
 	// Now call a method on the reference
@@ -352,10 +352,10 @@ func TestHandler_ObjectReturningObject(t *testing.T) {
 	}
 
 	// Both should be registered
-	if _, exists := h.objects[result["counter1"].Ref]; !exists {
+	if h.session.GetLocalRef(result["counter1"].Ref) == nil {
 		t.Error("counter1 should be registered")
 	}
-	if _, exists := h.objects[result["counter2"].Ref]; !exists {
+	if h.session.GetLocalRef(result["counter2"].Ref) == nil {
 		t.Error("counter2 should be registered")
 	}
 }

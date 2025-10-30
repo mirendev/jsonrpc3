@@ -175,7 +175,7 @@ func TestBidirectionalCallback(t *testing.T) {
 	// Step 1: Client registers a local callback object
 	callbackRef := "client-callback-1"
 	callbackObj := clientRoot // Use the method map itself as the callback object
-	pair.clientHandler.AddObject(callbackRef, callbackObj)
+	pair.clientSession.AddLocalRef(callbackRef, callbackObj)
 
 	// Step 2: Client calls server's subscribe method, passing callback reference
 	var subscribeResult struct {
@@ -237,7 +237,7 @@ func TestBidirectionalCallbackWithObjectReturn(t *testing.T) {
 
 	// Client registers callback
 	callbackRef := "client-callback-2"
-	pair.clientHandler.AddObject(callbackRef, clientRoot)
+	pair.clientSession.AddLocalRef(callbackRef, clientRoot)
 
 	// Client calls server
 	var registerResult string
@@ -291,7 +291,7 @@ func TestBidirectionalCallbackMultiple(t *testing.T) {
 
 	// Register callback
 	ref := "listener-1"
-	pair.clientHandler.AddObject(ref, clientRoot)
+	pair.clientSession.AddLocalRef(ref, clientRoot)
 
 	var result string
 	err := pair.ClientCall("registerListener", LocalReference{Ref: ref}, &result)
@@ -338,7 +338,7 @@ func TestBidirectionalCallbackError(t *testing.T) {
 	pair := NewBidirectionalPair(clientRoot, serverRoot)
 
 	ref := "callback-err"
-	pair.clientHandler.AddObject(ref, clientRoot)
+	pair.clientSession.AddLocalRef(ref, clientRoot)
 
 	var result string
 	err := pair.ClientCall("register", LocalReference{Ref: ref}, &result)
