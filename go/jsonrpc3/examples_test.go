@@ -326,3 +326,91 @@ func Example_webSocketBidirectional() {
 	// Client->Server: pong
 	// Server->Client: client received: hello
 }
+
+// Example_webTransport demonstrates using WebTransport for bidirectional RPC.
+// Note: WebTransport requires HTTP/3 and TLS certificates. This example shows
+// the API usage pattern but cannot run in tests without a full HTTP/3 setup.
+func Example_webTransport() {
+	// This example demonstrates the API but cannot execute in tests
+	// due to WebTransport's certificate requirements
+
+	fmt.Println("WebTransport provides:")
+	fmt.Println("- Low-latency bidirectional communication over HTTP/3")
+	fmt.Println("- Stream multiplexing without head-of-line blocking")
+	fmt.Println("- Built-in TLS security")
+	fmt.Println("- Connection migration support")
+
+	// Server setup (illustrative)
+	_ = func() {
+		serverRoot := jsonrpc3.NewMethodMap()
+		serverRoot.Register("add", func(params jsonrpc3.Params) (any, error) {
+			var nums []int
+			params.Decode(&nums)
+			sum := 0
+			for _, n := range nums {
+				sum += n
+			}
+			return sum, nil
+		})
+
+		// Creates server with auto-generated self-signed cert for testing
+		server, _ := jsonrpc3.NewWebTransportServer("localhost:4433", serverRoot, nil)
+		defer server.Close()
+
+		// Start server
+		go server.ListenAndServe()
+	}
+
+	// Client setup (illustrative)
+	_ = func() {
+		client, _ := jsonrpc3.NewWebTransportClient("https://localhost:4433/", nil)
+		defer client.Close()
+
+		var result int
+		client.Call("add", []int{1, 2, 3}, &result)
+		fmt.Printf("Sum: %d\n", result)
+	}
+
+	// Output:
+	// WebTransport provides:
+	// - Low-latency bidirectional communication over HTTP/3
+	// - Stream multiplexing without head-of-line blocking
+	// - Built-in TLS security
+	// - Connection migration support
+}
+
+// Example_webTransportVsWebSocket compares WebTransport and WebSocket features.
+func Example_webTransportVsWebSocket() {
+	fmt.Println("WebSocket vs WebTransport:")
+	fmt.Println()
+	fmt.Println("WebSocket:")
+	fmt.Println("- Built on TCP (HTTP/1.1 upgrade)")
+	fmt.Println("- Single bidirectional stream")
+	fmt.Println("- Universal browser support")
+	fmt.Println("- May suffer from head-of-line blocking")
+	fmt.Println()
+	fmt.Println("WebTransport:")
+	fmt.Println("- Built on QUIC/UDP (HTTP/3)")
+	fmt.Println("- Multiple independent streams + datagrams")
+	fmt.Println("- Modern browsers only (Chrome 97+)")
+	fmt.Println("- No head-of-line blocking")
+	fmt.Println("- Faster connection establishment (0-RTT)")
+	fmt.Println("- Connection migration (survives IP changes)")
+
+	// Output:
+	// WebSocket vs WebTransport:
+	//
+	// WebSocket:
+	// - Built on TCP (HTTP/1.1 upgrade)
+	// - Single bidirectional stream
+	// - Universal browser support
+	// - May suffer from head-of-line blocking
+	//
+	// WebTransport:
+	// - Built on QUIC/UDP (HTTP/3)
+	// - Multiple independent streams + datagrams
+	// - Modern browsers only (Chrome 97+)
+	// - No head-of-line blocking
+	// - Faster connection establishment (0-RTT)
+	// - Connection migration (survives IP changes)
+}

@@ -115,7 +115,14 @@ func TestWebSocket_ServerToClientCall(t *testing.T) {
 			return
 		}
 
+		// Determine content type from accepted subprotocol
 		contentType := "application/json"
+		switch conn.Subprotocol() {
+		case "jsonrpc3.cbor":
+			contentType = "application/cbor"
+		case "jsonrpc3.cbor-compact":
+			contentType = "application/cbor; format=compact"
+		}
 		wsConn := newWebSocketConn(conn, root, contentType, handler.mimeTypes)
 
 		connMu.Lock()
@@ -231,7 +238,14 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 			return
 		}
 
+		// Determine content type from accepted subprotocol
 		contentType := "application/json"
+		switch conn.Subprotocol() {
+		case "jsonrpc3.cbor":
+			contentType = "application/cbor"
+		case "jsonrpc3.cbor-compact":
+			contentType = "application/cbor; format=compact"
+		}
 		wsConn := newWebSocketConn(conn, root, contentType, handler.mimeTypes)
 		wsConn.RegisterObject("counter-1", counterObj)
 
@@ -386,7 +400,14 @@ func TestWebSocket_SessionManagement(t *testing.T) {
 			return
 		}
 
+		// Determine content type from accepted subprotocol
 		contentType := "application/json"
+		switch conn.Subprotocol() {
+		case "jsonrpc3.cbor":
+			contentType = "application/cbor"
+		case "jsonrpc3.cbor-compact":
+			contentType = "application/cbor; format=compact"
+		}
 		wsConn := newWebSocketConn(conn, root, contentType, handler.mimeTypes)
 
 		connMu.Lock()

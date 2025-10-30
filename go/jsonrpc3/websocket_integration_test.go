@@ -67,7 +67,14 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 			return
 		}
 
+		// Determine content type from accepted subprotocol
 		contentType := "application/json"
+		switch conn.Subprotocol() {
+		case "jsonrpc3.cbor":
+			contentType = "application/cbor"
+		case "jsonrpc3.cbor-compact":
+			contentType = "application/cbor; format=compact"
+		}
 		wsConn := newWebSocketConn(conn, serverRoot, contentType, handler.mimeTypes)
 
 		connMu.Lock()
@@ -149,7 +156,14 @@ func TestWebSocketIntegration_ConcurrentBidirectional(t *testing.T) {
 			return
 		}
 
+		// Determine content type from accepted subprotocol
 		contentType := "application/json"
+		switch conn.Subprotocol() {
+		case "jsonrpc3.cbor":
+			contentType = "application/cbor"
+		case "jsonrpc3.cbor-compact":
+			contentType = "application/cbor; format=compact"
+		}
 		wsConn := newWebSocketConn(conn, serverRoot, contentType, handler.mimeTypes)
 
 		connMu.Lock()
@@ -246,7 +260,14 @@ func TestWebSocketIntegration_ObjectLifecycle(t *testing.T) {
 			return
 		}
 
+		// Determine content type from accepted subprotocol
 		contentType := "application/json"
+		switch conn.Subprotocol() {
+		case "jsonrpc3.cbor":
+			contentType = "application/cbor"
+		case "jsonrpc3.cbor-compact":
+			contentType = "application/cbor; format=compact"
+		}
 		wsConn := newWebSocketConn(conn, serverRoot, contentType, handler.mimeTypes)
 
 		connMu.Lock()

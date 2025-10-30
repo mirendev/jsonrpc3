@@ -2,24 +2,29 @@ package jsonrpc3
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/quic-go/webtransport-go"
 )
 
-// WebSocketClient represents a WebSocket client for JSON-RPC 3.0.
+// WebTransportClient represents a WebTransport client for JSON-RPC 3.0.
 // It supports full bidirectional communication where both client and server
-// can initiate method calls at any time.
-type WebSocketClient struct {
+// can initiate method calls at any time, built on HTTP/3 and QUIC.
+type WebTransportClient struct {
 	url         string
-	conn        *websocket.Conn
-	session     *Session
+	session     *webtransport.Session
+	wtSession   *Session // JSON-RPC session
 	handler     *Handler
 	rootObject  Object
 	contentType string
+
+	// Control stream for all JSON-RPC messages
+	controlStream *webtransport.Stream
 
 	// Request tracking for concurrent requests
 	pendingReqs sync.Map // id (any) -> chan *Response
@@ -39,74 +44,71 @@ type WebSocketClient struct {
 	errMu   sync.RWMutex
 }
 
-// NewWebSocketClient creates a new WebSocket client and connects to the server.
+// NewWebTransportClient creates a new WebTransport client and connects to the server.
 // The rootObject handles incoming method calls from the server.
 // The contentType specifies the encoding (default: "application/cbor").
-func NewWebSocketClient(url string, rootObject Object) (*WebSocketClient, error) {
-	return NewWebSocketClientWithFormat(url, rootObject, "application/cbor")
+func NewWebTransportClient(url string, rootObject Object) (*WebTransportClient, error) {
+	return NewWebTransportClientWithFormat(url, rootObject, "application/cbor")
 }
 
-// NewWebSocketClientWithFormat creates a WebSocket client with specified encoding.
+// NewWebTransportClientWithFormat creates a WebTransport client with specified encoding.
 // Supported formats: "application/json", "application/cbor", "application/cbor; format=compact"
-func NewWebSocketClientWithFormat(url string, rootObject Object, contentType string) (*WebSocketClient, error) {
+func NewWebTransportClientWithFormat(url string, rootObject Object, contentType string) (*WebTransportClient, error) {
+	return newWebTransportClientWithTLS(url, rootObject, contentType, nil)
+}
+
+// newWebTransportClientWithTLS creates a client with custom TLS config (for testing)
+func newWebTransportClientWithTLS(url string, rootObject Object, contentType string, tlsConfig *tls.Config) (*WebTransportClient, error) {
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Propose protocol via Sec-WebSocket-Protocol header
-	protocol := "jsonrpc3"
-	switch contentType {
-	case "application/cbor":
-		protocol = "jsonrpc3.cbor"
-	case "application/cbor; format=compact":
-		protocol = "jsonrpc3.cbor-compact"
-	default:
-		protocol = "jsonrpc3.json"
-	}
+	// Set up request headers for protocol negotiation
+	reqHdr := http.Header{}
+	reqHdr.Set("Content-Type", contentType)
 
-	// Connect to WebSocket using context
-	dialer := websocket.Dialer{
-		Subprotocols: []string{protocol},
+	// Connect to WebTransport server
+	dialer := webtransport.Dialer{
+		TLSClientConfig: tlsConfig,
 	}
-
-	conn, resp, err := dialer.DialContext(ctx, url, nil)
+	resp, session, err := dialer.Dial(ctx, url, reqHdr)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to connect to %s: %w", url, err)
 	}
-	defer func() {
-		if resp != nil && resp.Body != nil {
-			resp.Body.Close()
-		}
-	}()
+	// Note: Do NOT close resp.Body - it will close the underlying HTTP/3 connection
+	// and reset the WebTransport streams
 
-	// Determine accepted protocol
-	acceptedProtocol := conn.Subprotocol()
+	// Determine accepted content type from response
 	acceptedContentType := contentType
-	switch acceptedProtocol {
-	case "jsonrpc3.json":
-		acceptedContentType = "application/json"
-	case "jsonrpc3.cbor":
-		acceptedContentType = "application/cbor"
-	case "jsonrpc3.cbor-compact":
-		acceptedContentType = "application/cbor; format=compact"
+	if ct := resp.Header.Get("Content-Type"); ct != "" {
+		acceptedContentType = ct
 	}
 
-	// Create client
-	session := NewSession()
-	mimeTypes := []string{acceptedContentType}
-	handler := NewHandler(session, rootObject, mimeTypes)
+	// Open control stream for bidirectional communication
+	controlStream, err := session.OpenStreamSync(ctx)
+	if err != nil {
+		cancel()
+		session.CloseWithError(0, "failed to open control stream")
+		return nil, fmt.Errorf("failed to open control stream: %w", err)
+	}
 
-	client := &WebSocketClient{
-		url:         url,
-		conn:        conn,
-		session:     session,
-		handler:     handler,
-		rootObject:  rootObject,
-		contentType: acceptedContentType,
-		writeChan:   make(chan []byte, 100),
-		closeChan:   make(chan struct{}),
-		ctx:         ctx,
-		cancel:      cancel,
+	// Create JSON-RPC session and handler
+	wtSession := NewSession()
+	mimeTypes := []string{acceptedContentType}
+	handler := NewHandler(wtSession, rootObject, mimeTypes)
+
+	client := &WebTransportClient{
+		url:           url,
+		session:       session,
+		wtSession:     wtSession,
+		handler:       handler,
+		rootObject:    rootObject,
+		contentType:   acceptedContentType,
+		controlStream: controlStream,
+		writeChan:     make(chan []byte, 100),
+		closeChan:     make(chan struct{}),
+		ctx:           ctx,
+		cancel:        cancel,
 	}
 
 	// Start read and write loops
@@ -117,12 +119,12 @@ func NewWebSocketClientWithFormat(url string, rootObject Object, contentType str
 }
 
 // Call invokes a method on the server and waits for the response.
-func (c *WebSocketClient) Call(method string, params any, result any) error {
+func (c *WebTransportClient) Call(method string, params any, result any) error {
 	return c.CallRef("", method, params, result)
 }
 
 // CallRef invokes a method on a remote reference and waits for the response.
-func (c *WebSocketClient) CallRef(ref string, method string, params any, result any) error {
+func (c *WebTransportClient) CallRef(ref string, method string, params any, result any) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
@@ -190,12 +192,12 @@ func (c *WebSocketClient) CallRef(ref string, method string, params any, result 
 }
 
 // Notify sends a notification (no response expected).
-func (c *WebSocketClient) Notify(method string, params any) error {
+func (c *WebTransportClient) Notify(method string, params any) error {
 	return c.NotifyRef("", method, params)
 }
 
 // NotifyRef sends a notification to a remote reference.
-func (c *WebSocketClient) NotifyRef(ref string, method string, params any) error {
+func (c *WebTransportClient) NotifyRef(ref string, method string, params any) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
@@ -228,22 +230,22 @@ func (c *WebSocketClient) NotifyRef(ref string, method string, params any) error
 }
 
 // RegisterObject registers a local object that the server can call.
-func (c *WebSocketClient) RegisterObject(ref string, obj Object) {
+func (c *WebTransportClient) RegisterObject(ref string, obj Object) {
 	c.handler.AddObject(ref, obj)
 }
 
 // UnregisterObject removes a registered local object.
-func (c *WebSocketClient) UnregisterObject(ref string) {
+func (c *WebTransportClient) UnregisterObject(ref string) {
 	c.handler.RemoveObject(ref)
 }
 
 // GetSession returns the client's session.
-func (c *WebSocketClient) GetSession() *Session {
-	return c.session
+func (c *WebTransportClient) GetSession() *Session {
+	return c.wtSession
 }
 
-// Close closes the WebSocket connection gracefully.
-func (c *WebSocketClient) Close() error {
+// Close closes the WebTransport connection gracefully.
+func (c *WebTransportClient) Close() error {
 	var err error
 	c.closeOnce.Do(func() {
 		// Cancel context to stop any pending operations
@@ -251,15 +253,18 @@ func (c *WebSocketClient) Close() error {
 
 		close(c.closeChan)
 
-		// Send close message
-		closeMsg := websocket.FormatCloseMessage(websocket.CloseNormalClosure, "")
-		c.conn.WriteControl(websocket.CloseMessage, closeMsg, time.Now().Add(time.Second))
+		// Close control stream
+		if c.controlStream != nil {
+			c.controlStream.Close()
+		}
 
-		// Close connection
-		err = c.conn.Close()
+		// Close session
+		if c.session != nil {
+			err = c.session.CloseWithError(0, "client closed")
+		}
 
 		// Dispose all refs
-		c.session.DisposeAll()
+		c.wtSession.DisposeAll()
 
 		// Wake up all pending requests
 		c.pendingReqs.Range(func(key, value any) bool {
@@ -273,9 +278,14 @@ func (c *WebSocketClient) Close() error {
 	return err
 }
 
-// readLoop continuously reads messages from the WebSocket connection.
-func (c *WebSocketClient) readLoop() {
+// readLoop continuously reads messages from the control stream.
+func (c *WebTransportClient) readLoop() {
 	defer c.Close()
+
+	// Give server a moment to accept the stream before first read
+	// This prevents a race condition where the client tries to read before
+	// the server has accepted the stream
+	time.Sleep(300 * time.Millisecond)
 
 	codec := GetCodec(c.contentType)
 
@@ -286,15 +296,11 @@ func (c *WebSocketClient) readLoop() {
 		default:
 		}
 
-		// Read message
-		messageType, data, err := c.conn.ReadMessage()
+		// Read framed message
+		data, err := readFramedMessage(c.controlStream)
 		if err != nil {
 			c.setError(fmt.Errorf("read error: %w", err))
 			return
-		}
-
-		if messageType != websocket.BinaryMessage && messageType != websocket.TextMessage {
-			continue
 		}
 
 		// Decode as Message
@@ -316,7 +322,7 @@ func (c *WebSocketClient) readLoop() {
 }
 
 // handleIncomingRequest processes an incoming request from the server.
-func (c *WebSocketClient) handleIncomingRequest(msg *Message, codec Codec) {
+func (c *WebTransportClient) handleIncomingRequest(msg *Message, codec Codec) {
 	req := msg.ToRequest()
 	if req == nil {
 		return
@@ -342,7 +348,7 @@ func (c *WebSocketClient) handleIncomingRequest(msg *Message, codec Codec) {
 }
 
 // handleIncomingResponse processes an incoming response to our request.
-func (c *WebSocketClient) handleIncomingResponse(msg *Message) {
+func (c *WebTransportClient) handleIncomingResponse(msg *Message) {
 	resp := msg.ToResponse()
 	if resp == nil {
 		return
@@ -360,12 +366,12 @@ func (c *WebSocketClient) handleIncomingResponse(msg *Message) {
 	}
 }
 
-// writeLoop continuously sends queued messages to the WebSocket connection.
-func (c *WebSocketClient) writeLoop() {
+// writeLoop continuously sends queued messages to the control stream.
+func (c *WebTransportClient) writeLoop() {
 	for {
 		select {
 		case data := <-c.writeChan:
-			if err := c.conn.WriteMessage(websocket.BinaryMessage, data); err != nil {
+			if err := writeFramedMessage(c.controlStream, data); err != nil {
 				c.setError(fmt.Errorf("write error: %w", err))
 				return
 			}
@@ -377,7 +383,7 @@ func (c *WebSocketClient) writeLoop() {
 }
 
 // setError stores a connection error.
-func (c *WebSocketClient) setError(err error) {
+func (c *WebTransportClient) setError(err error) {
 	c.errMu.Lock()
 	defer c.errMu.Unlock()
 	if c.connErr == nil {
@@ -386,7 +392,7 @@ func (c *WebSocketClient) setError(err error) {
 }
 
 // getError retrieves any connection error.
-func (c *WebSocketClient) getError() error {
+func (c *WebTransportClient) getError() error {
 	c.errMu.RLock()
 	defer c.errMu.RUnlock()
 	return c.connErr
