@@ -501,7 +501,7 @@ func TestWebTransportIntegration_Documentation(t *testing.T) {
 		// Client with custom options
 		tlsConfig := &tls.Config{InsecureSkipVerify: true}
 		client2, err := NewWebTransportClient("https://localhost:4433/", nil,
-			WithContentType("application/json"),
+			WithJSON(),
 			WithTLSConfig(tlsConfig),
 		)
 		if err != nil {

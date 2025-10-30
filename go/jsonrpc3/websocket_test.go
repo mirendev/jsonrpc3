@@ -370,7 +370,7 @@ func TestWebSocket_ProtocolNegotiation(t *testing.T) {
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
 
 	// Test CBOR
-	client, err := NewWebSocketClientWithFormat(wsURL, nil, "application/cbor")
+	client, err := NewWebSocketClient(wsURL, nil, WithContentType("application/cbor"))
 	require.NoError(t, err)
 	defer client.Close()
 

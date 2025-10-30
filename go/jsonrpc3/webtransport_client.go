@@ -2,7 +2,6 @@ package jsonrpc3
 
 import (
 	"context"
-	"crypto/tls"
 	"fmt"
 	"net/http"
 	"sync"
@@ -44,30 +43,6 @@ type WebTransportClient struct {
 	errMu   sync.RWMutex
 }
 
-// WebTransportClientOption is a functional option for configuring a WebTransportClient.
-type WebTransportClientOption func(*webTransportClientOptions)
-
-// webTransportClientOptions holds configuration options for WebTransportClient.
-type webTransportClientOptions struct {
-	contentType string
-	tlsConfig   *tls.Config
-}
-
-// WithContentType sets the content type for encoding/decoding messages.
-// Supported formats: "application/json", "application/cbor", "application/cbor; format=compact"
-func WithContentType(contentType string) WebTransportClientOption {
-	return func(o *webTransportClientOptions) {
-		o.contentType = contentType
-	}
-}
-
-// WithTLSConfig sets a custom TLS configuration for the WebTransport connection.
-func WithTLSConfig(tlsConfig *tls.Config) WebTransportClientOption {
-	return func(o *webTransportClientOptions) {
-		o.tlsConfig = tlsConfig
-	}
-}
-
 // NewWebTransportClient creates a new WebTransport client and connects to the server.
 // The rootObject handles incoming method calls from the server.
 // Default encoding is "application/cbor".
@@ -75,9 +50,9 @@ func WithTLSConfig(tlsConfig *tls.Config) WebTransportClientOption {
 // Options:
 //   - WithContentType(contentType) - specify encoding format
 //   - WithTLSConfig(tlsConfig) - customize TLS configuration
-func NewWebTransportClient(url string, rootObject Object, opts ...WebTransportClientOption) (*WebTransportClient, error) {
+func NewWebTransportClient(url string, rootObject Object, opts ...ClientOption) (*WebTransportClient, error) {
 	// Apply options with defaults
-	options := &webTransportClientOptions{
+	options := &clientOptions{
 		contentType: "application/cbor",
 	}
 	for _, opt := range opts {
@@ -88,7 +63,7 @@ func NewWebTransportClient(url string, rootObject Object, opts ...WebTransportCl
 }
 
 // newWebTransportClient is the internal constructor with options
-func newWebTransportClient(url string, rootObject Object, options *webTransportClientOptions) (*WebTransportClient, error) {
+func newWebTransportClient(url string, rootObject Object, options *clientOptions) (*WebTransportClient, error) {
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 

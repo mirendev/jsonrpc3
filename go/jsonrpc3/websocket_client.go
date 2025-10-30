@@ -2,6 +2,7 @@ package jsonrpc3
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -39,22 +40,69 @@ type WebSocketClient struct {
 	errMu   sync.RWMutex
 }
 
-// NewWebSocketClient creates a new WebSocket client and connects to the server.
-// The rootObject handles incoming method calls from the server.
-// The contentType specifies the encoding (default: "application/cbor").
-func NewWebSocketClient(url string, rootObject Object) (*WebSocketClient, error) {
-	return NewWebSocketClientWithFormat(url, rootObject, "application/cbor")
+// clientOptions holds common configuration options for JSON-RPC clients.
+type clientOptions struct {
+	contentType string
+	tlsConfig   *tls.Config
 }
 
-// NewWebSocketClientWithFormat creates a WebSocket client with specified encoding.
+// ClientOption is a functional option for configuring a WebSocketClient.
+type ClientOption func(*clientOptions)
+
+// WithContentType sets the content type for encoding/decoding messages.
 // Supported formats: "application/json", "application/cbor", "application/cbor; format=compact"
-func NewWebSocketClientWithFormat(url string, rootObject Object, contentType string) (*WebSocketClient, error) {
+// This option works for both WebSocket and WebTransport clients.
+func WithContentType(contentType string) ClientOption {
+	return func(o *clientOptions) {
+		o.contentType = contentType
+	}
+}
+
+func WithJSON() ClientOption {
+	return WithContentType("application/json")
+}
+
+func WithCBOR() ClientOption {
+	return WithContentType("application/cbor")
+}
+
+func WithCompactCBOR() ClientOption {
+	return WithContentType("application/cbor; format=compact")
+}
+
+// WithTLSConfig sets a custom TLS configuration for the WebTransport connection.
+func WithTLSConfig(tlsConfig *tls.Config) ClientOption {
+	return func(o *clientOptions) {
+		o.tlsConfig = tlsConfig
+	}
+}
+
+// NewWebSocketClient creates a new WebSocket client and connects to the server.
+// The rootObject handles incoming method calls from the server.
+// Default encoding is "application/cbor".
+//
+// Options:
+//   - WithContentType(contentType) - specify encoding format
+func NewWebSocketClient(url string, rootObject Object, opts ...ClientOption) (*WebSocketClient, error) {
+	// Apply options with defaults
+	options := &clientOptions{
+		contentType: "application/cbor",
+	}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	return newWebSocketClient(url, rootObject, options)
+}
+
+// newWebSocketClient is the internal constructor with options
+func newWebSocketClient(url string, rootObject Object, options *clientOptions) (*WebSocketClient, error) {
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Propose protocol via Sec-WebSocket-Protocol header
 	protocol := "jsonrpc3"
-	switch contentType {
+	switch options.contentType {
 	case "application/cbor":
 		protocol = "jsonrpc3.cbor"
 	case "application/cbor; format=compact":
@@ -81,7 +129,7 @@ func NewWebSocketClientWithFormat(url string, rootObject Object, contentType str
 
 	// Determine accepted protocol
 	acceptedProtocol := conn.Subprotocol()
-	acceptedContentType := contentType
+	acceptedContentType := options.contentType
 	switch acceptedProtocol {
 	case "jsonrpc3.json":
 		acceptedContentType = "application/json"
