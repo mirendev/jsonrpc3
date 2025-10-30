@@ -44,31 +44,61 @@ type WebTransportClient struct {
 	errMu   sync.RWMutex
 }
 
+// WebTransportClientOption is a functional option for configuring a WebTransportClient.
+type WebTransportClientOption func(*webTransportClientOptions)
+
+// webTransportClientOptions holds configuration options for WebTransportClient.
+type webTransportClientOptions struct {
+	contentType string
+	tlsConfig   *tls.Config
+}
+
+// WithContentType sets the content type for encoding/decoding messages.
+// Supported formats: "application/json", "application/cbor", "application/cbor; format=compact"
+func WithContentType(contentType string) WebTransportClientOption {
+	return func(o *webTransportClientOptions) {
+		o.contentType = contentType
+	}
+}
+
+// WithTLSConfig sets a custom TLS configuration for the WebTransport connection.
+func WithTLSConfig(tlsConfig *tls.Config) WebTransportClientOption {
+	return func(o *webTransportClientOptions) {
+		o.tlsConfig = tlsConfig
+	}
+}
+
 // NewWebTransportClient creates a new WebTransport client and connects to the server.
 // The rootObject handles incoming method calls from the server.
-// The contentType specifies the encoding (default: "application/cbor").
-func NewWebTransportClient(url string, rootObject Object) (*WebTransportClient, error) {
-	return NewWebTransportClientWithFormat(url, rootObject, "application/cbor")
+// Default encoding is "application/cbor".
+//
+// Options:
+//   - WithContentType(contentType) - specify encoding format
+//   - WithTLSConfig(tlsConfig) - customize TLS configuration
+func NewWebTransportClient(url string, rootObject Object, opts ...WebTransportClientOption) (*WebTransportClient, error) {
+	// Apply options with defaults
+	options := &webTransportClientOptions{
+		contentType: "application/cbor",
+	}
+	for _, opt := range opts {
+		opt(options)
+	}
+
+	return newWebTransportClient(url, rootObject, options)
 }
 
-// NewWebTransportClientWithFormat creates a WebTransport client with specified encoding.
-// Supported formats: "application/json", "application/cbor", "application/cbor; format=compact"
-func NewWebTransportClientWithFormat(url string, rootObject Object, contentType string) (*WebTransportClient, error) {
-	return newWebTransportClientWithTLS(url, rootObject, contentType, nil)
-}
-
-// newWebTransportClientWithTLS creates a client with custom TLS config (for testing)
-func newWebTransportClientWithTLS(url string, rootObject Object, contentType string, tlsConfig *tls.Config) (*WebTransportClient, error) {
+// newWebTransportClient is the internal constructor with options
+func newWebTransportClient(url string, rootObject Object, options *webTransportClientOptions) (*WebTransportClient, error) {
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 
 	// Set up request headers for protocol negotiation
 	reqHdr := http.Header{}
-	reqHdr.Set("Content-Type", contentType)
+	reqHdr.Set("Content-Type", options.contentType)
 
 	// Connect to WebTransport server
 	dialer := webtransport.Dialer{
-		TLSClientConfig: tlsConfig,
+		TLSClientConfig: options.tlsConfig,
 	}
 	resp, session, err := dialer.Dial(ctx, url, reqHdr)
 	if err != nil {
@@ -79,7 +109,7 @@ func newWebTransportClientWithTLS(url string, rootObject Object, contentType str
 	// and reset the WebTransport streams
 
 	// Determine accepted content type from response
-	acceptedContentType := contentType
+	acceptedContentType := options.contentType
 	if ct := resp.Header.Get("Content-Type"); ct != "" {
 		acceptedContentType = ct
 	}

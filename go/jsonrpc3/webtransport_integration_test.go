@@ -17,7 +17,10 @@ func createTestWebTransportClient(url string, rootObject Object, contentType str
 	tlsConfig := &tls.Config{
 		InsecureSkipVerify: true, // Accept self-signed certs in tests
 	}
-	return newWebTransportClientWithTLS(url, rootObject, contentType, tlsConfig)
+	return NewWebTransportClient(url, rootObject,
+		WithContentType(contentType),
+		WithTLSConfig(tlsConfig),
+	)
 }
 
 // TestWebTransportIntegration_BasicCall tests basic client-server communication
@@ -486,16 +489,28 @@ func TestWebTransportIntegration_Documentation(t *testing.T) {
 		return nil
 	}
 
-	// Example of how to create a WebTransport client with InsecureSkipVerify for testing
+	// Example of how to create a WebTransport client with options
 	_ = func() error {
-		client, err := createTestWebTransportClient("https://localhost:4433/", nil, "application/json")
+		// Simple client with defaults (CBOR encoding)
+		client, err := NewWebTransportClient("https://localhost:4433/", nil)
 		if err != nil {
 			return err
 		}
 		defer client.Close()
 
+		// Client with custom options
+		tlsConfig := &tls.Config{InsecureSkipVerify: true}
+		client2, err := NewWebTransportClient("https://localhost:4433/", nil,
+			WithContentType("application/json"),
+			WithTLSConfig(tlsConfig),
+		)
+		if err != nil {
+			return err
+		}
+		defer client2.Close()
+
 		var result int
-		err = client.Call("add", []int{1, 2, 3}, &result)
+		err = client2.Call("add", []int{1, 2, 3}, &result)
 		if err != nil {
 			return err
 		}
