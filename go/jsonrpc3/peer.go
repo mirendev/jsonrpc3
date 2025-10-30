@@ -45,7 +45,7 @@ type Peer struct {
 
 // NewPeer creates a new bidirectional JSON-RPC 3.0 peer over a stream-based transport.
 // The rootObject handles incoming method calls from the remote peer.
-// Default encoding is "application/cbor".
+// Default encoding is MimeTypeCBOR.
 //
 // Options:
 //   - WithContentType(contentType) - specify encoding format
@@ -60,7 +60,7 @@ type Peer struct {
 func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...ClientOption) (*Peer, error) {
 	// Apply options with defaults
 	options := &clientOptions{
-		contentType: "application/cbor",
+		contentType: MimeTypeCBOR,
 	}
 	for _, opt := range opts {
 		opt(options)
@@ -100,9 +100,23 @@ func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...Clie
 
 // Stdio creates a new Peer using standard input and output streams.
 // The rootObject handles incoming method calls from the remote peer.
-// Default encoding is "application/json".
+// Default encoding is MimeTypeJSON.
 func Stdio(rootObject Object, opts ...ClientOption) (*Peer, error) {
-	opts = append([]ClientOption{WithJSON()}, opts...)
+	if mimetype := os.Getenv("JSONRPC_CONTENT_TYPE"); mimetype != "" {
+		switch mimetype {
+		case MimeTypeJSON:
+			opts = append(opts, WithJSON())
+			// Default, do nothing
+		case MimeTypeCBOR:
+			opts = append(opts, WithCBOR())
+		case MimeTypeCBORCompact:
+			opts = append(opts, WithCompactCBOR())
+		default:
+			return nil, fmt.Errorf("unsupported JSON-RPC content type: %s", mimetype)
+		}
+	} else {
+		opts = append([]ClientOption{WithJSON()}, opts...)
+	}
 	return NewPeer(os.Stdin, os.Stdout, rootObject, opts...)
 }
 
@@ -297,8 +311,11 @@ func (p *Peer) readLoop() {
 				msg := &msgSet.Messages[i]
 				p.handleIncomingResponse(msg)
 			}
+		} else {
+			// Mixed request/response batches are invalid
+			// Send error responses for all requests in the batch
+			go p.handleInvalidBatch(&msgSet)
 		}
-		// Mixed request/response batches are invalid, ignore
 	}
 }
 
@@ -321,12 +338,39 @@ func (p *Peer) handleIncomingRequest(msg *Message) {
 	}
 }
 
+// sendErrorForBatch sends error responses for all non-notification requests in a MessageSet.
+func (p *Peer) sendErrorForBatch(msgSet *MessageSet, rpcErr *Error) {
+	var responses BatchResponse
+
+	// Create error responses for all requests (ignore responses)
+	for i := range msgSet.Messages {
+		msg := &msgSet.Messages[i]
+		if msg.IsRequest() {
+			req := msg.ToRequest()
+			if req != nil && !req.IsNotification() {
+				errResp := NewErrorResponse(req.ID, rpcErr, Version30)
+				responses = append(responses, *errResp)
+			}
+		}
+	}
+
+	// Send error responses if any (will be encoded in writeLoop)
+	if len(responses) > 0 {
+		select {
+		case p.writeChan <- responses:
+		case <-p.closeChan:
+		}
+	}
+}
+
 // handleIncomingBatch processes a batch of incoming requests from the remote peer.
 // Batch requests must be processed together to support batch-local references (\0, \1, etc.)
 func (p *Peer) handleIncomingBatch(msgSet *MessageSet) {
 	// Convert MessageSet to Batch
 	batch, err := msgSet.ToBatch()
 	if err != nil {
+		// Failed to convert - send error responses for all requests
+		p.sendErrorForBatch(msgSet, NewInternalError("failed to parse batch: "+err.Error()))
 		return
 	}
 
@@ -340,6 +384,12 @@ func (p *Peer) handleIncomingBatch(msgSet *MessageSet) {
 		case <-p.closeChan:
 		}
 	}
+}
+
+// handleInvalidBatch handles a batch with mixed requests and responses.
+// Sends error responses for all requests in the batch.
+func (p *Peer) handleInvalidBatch(msgSet *MessageSet) {
+	p.sendErrorForBatch(msgSet, NewInvalidRequestError("mixed requests and responses in batch"))
 }
 
 // handleIncomingResponse processes an incoming response to our request.

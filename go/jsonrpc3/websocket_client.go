@@ -63,15 +63,15 @@ func WithContentType(contentType string) ClientOption {
 }
 
 func WithJSON() ClientOption {
-	return WithContentType("application/json")
+	return WithContentType(MimeTypeJSON)
 }
 
 func WithCBOR() ClientOption {
-	return WithContentType("application/cbor")
+	return WithContentType(MimeTypeCBOR)
 }
 
 func WithCompactCBOR() ClientOption {
-	return WithContentType("application/cbor; format=compact")
+	return WithContentType(MimeTypeCBORCompact)
 }
 
 // WithTLSConfig sets a custom TLS configuration for the WebTransport connection.
@@ -90,7 +90,7 @@ func WithTLSConfig(tlsConfig *tls.Config) ClientOption {
 func NewWebSocketClient(url string, rootObject Object, opts ...ClientOption) (*WebSocketClient, error) {
 	// Apply options with defaults
 	options := &clientOptions{
-		contentType: "application/cbor",
+		contentType: MimeTypeCBOR,
 	}
 	for _, opt := range opts {
 		opt(options)
@@ -107,9 +107,9 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 	// Propose protocol via Sec-WebSocket-Protocol header
 	protocol := "jsonrpc3"
 	switch options.contentType {
-	case "application/cbor":
+	case MimeTypeCBOR:
 		protocol = "jsonrpc3.cbor"
-	case "application/cbor; format=compact":
+	case MimeTypeCBORCompact:
 		protocol = "jsonrpc3.cbor-compact"
 	default:
 		protocol = "jsonrpc3.json"
@@ -136,11 +136,11 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 	acceptedContentType := options.contentType
 	switch acceptedProtocol {
 	case "jsonrpc3.json":
-		acceptedContentType = "application/json"
+		acceptedContentType = MimeTypeJSON
 	case "jsonrpc3.cbor":
-		acceptedContentType = "application/cbor"
+		acceptedContentType = MimeTypeCBOR
 	case "jsonrpc3.cbor-compact":
-		acceptedContentType = "application/cbor; format=compact"
+		acceptedContentType = MimeTypeCBORCompact
 	}
 
 	// Create client
@@ -369,26 +369,41 @@ func (c *WebSocketClient) readLoop() {
 			continue
 		}
 
-		// Process single message (WebSocket doesn't support batch)
-		if len(msgSet.Messages) != 1 {
-			continue
+		// Check if all messages are requests or all are responses
+		allRequests := true
+		allResponses := true
+		for i := range msgSet.Messages {
+			if !msgSet.Messages[i].IsRequest() {
+				allRequests = false
+			}
+			if !msgSet.Messages[i].IsResponse() {
+				allResponses = false
+			}
 		}
 
-		msg := &msgSet.Messages[0]
-
-		// Dispatch based on message type
-		if msg.IsRequest() {
-			// Incoming request from server
-			go c.handleIncomingRequest(msg)
-		} else if msg.IsResponse() {
-			// Response to our request
-			c.handleIncomingResponse(msg)
+		// Handle batch requests as a unit (preserves batch-local references)
+		if allRequests && msgSet.IsBatch {
+			go c.handleIncomingBatch(codec, &msgSet)
+		} else if allRequests {
+			// Single request
+			msg := &msgSet.Messages[0]
+			go c.handleIncomingRequest(codec, msg)
+		} else if allResponses {
+			// Process responses individually (no batch context needed)
+			for i := range msgSet.Messages {
+				msg := &msgSet.Messages[i]
+				c.handleIncomingResponse(msg)
+			}
+		} else {
+			// Mixed request/response batches are invalid
+			// Send error responses for all requests in the batch
+			go c.sendErrorForBatch(codec, &msgSet, NewInvalidRequestError("mixed requests and responses in batch"))
 		}
 	}
 }
 
 // handleIncomingRequest processes an incoming request from the server.
-func (c *WebSocketClient) handleIncomingRequest(msg *Message) {
+func (c *WebSocketClient) handleIncomingRequest(codec Codec, msg *Message) {
 	req := msg.ToRequest()
 	if req == nil {
 		return
@@ -399,10 +414,72 @@ func (c *WebSocketClient) handleIncomingRequest(msg *Message) {
 
 	// Send response if not a notification
 	if resp != nil {
-		codec := GetCodec(c.contentType)
 		msgSet := resp.ToMessageSet()
 		respData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
+			return
+		}
+
+		select {
+		case c.writeChan <- respData:
+		case <-c.closeChan:
+		}
+	}
+}
+
+// sendErrorForBatch sends error responses for all non-notification requests in a MessageSet.
+func (c *WebSocketClient) sendErrorForBatch(codec Codec, msgSet *MessageSet, rpcErr *Error) {
+	var responses BatchResponse
+
+	// Create error responses for all requests (ignore responses)
+	for i := range msgSet.Messages {
+		msg := &msgSet.Messages[i]
+		if msg.IsRequest() {
+			req := msg.ToRequest()
+			if req != nil && !req.IsNotification() {
+				errResp := NewErrorResponse(req.ID, rpcErr, Version30)
+				responses = append(responses, *errResp)
+			}
+		}
+	}
+
+	// Send error responses if any
+	if len(responses) > 0 {
+		batchMsgSet := responses.ToMessageSet()
+		respData, err := codec.MarshalMessages(batchMsgSet)
+		if err != nil {
+			// Can't encode error responses - nothing more we can do
+			return
+		}
+
+		select {
+		case c.writeChan <- respData:
+		case <-c.closeChan:
+		}
+	}
+}
+
+// handleIncomingBatch processes a batch of incoming requests from the server.
+// Batch requests must be processed together to support batch-local references (\0, \1, etc.)
+func (c *WebSocketClient) handleIncomingBatch(codec Codec, msgSet *MessageSet) {
+	// Convert MessageSet to Batch
+	batch, err := msgSet.ToBatch()
+	if err != nil {
+		// Failed to convert - send error responses for all requests
+		c.sendErrorForBatch(codec, msgSet, NewInternalError("failed to parse batch: "+err.Error()))
+		return
+	}
+
+	// Handle batch via handler (preserves batch-local references)
+	responses := c.handler.HandleBatch(batch)
+
+	// Send batch response as a unit
+	if len(responses) > 0 {
+		batchMsgSet := responses.ToMessageSet()
+		respData, err := codec.MarshalMessages(batchMsgSet)
+		if err != nil {
+			// Failed to encode responses - send error responses for all requests
+			c.sendErrorForBatch(codec, msgSet, NewInternalError("failed to encode response: "+err.Error()))
 			return
 		}
 

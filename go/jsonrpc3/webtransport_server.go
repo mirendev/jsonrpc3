@@ -34,9 +34,9 @@ type WebTransportServer struct {
 // If tlsConfig is nil, a self-signed certificate will be generated for testing.
 func NewWebTransportServer(addr string, rootObject Object, tlsConfig *tls.Config) (*WebTransportServer, error) {
 	mimeTypes := []string{
-		"application/json",
-		"application/cbor",
-		"application/cbor; format=compact",
+		MimeTypeJSON,
+		MimeTypeCBOR,
+		MimeTypeCBORCompact,
 	}
 
 	// Generate self-signed cert if not provided
@@ -85,7 +85,7 @@ func (s *WebTransportServer) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Determine content type from request
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
-		contentType = "application/json"
+		contentType = MimeTypeJSON
 	}
 
 	// Set response content type BEFORE upgrading
@@ -124,7 +124,7 @@ type WebTransportConn struct {
 	refCounter atomic.Int64
 
 	// Message channels
-	writeChan chan any // Messages to encode and send
+	writeChan chan MessageSetConvertible // Messages to encode and send
 	closeChan chan struct{}
 	closeOnce sync.Once
 
@@ -144,7 +144,7 @@ func newWebTransportConn(session *webtransport.Session, rootObject Object, conte
 		handler:     handler,
 		contentType: contentType,
 		refPrefix:   generateConnID(),
-		writeChan:   make(chan any, 100),
+		writeChan:   make(chan MessageSetConvertible, 100),
 		closeChan:   make(chan struct{}),
 	}
 }
@@ -371,8 +371,11 @@ func (c *WebTransportConn) readLoop() {
 				msg := &msgSet.Messages[i]
 				c.handleIncomingResponse(msg)
 			}
+		} else {
+			// Mixed request/response batches are invalid
+			// Send error responses for all requests in the batch
+			go c.handleInvalidBatch(&msgSet)
 		}
-		// Mixed request/response batches are invalid, ignore
 	}
 }
 
@@ -395,12 +398,39 @@ func (c *WebTransportConn) handleIncomingRequest(msg *Message) {
 	}
 }
 
+// sendErrorForBatch sends error responses for all non-notification requests in a MessageSet.
+func (c *WebTransportConn) sendErrorForBatch(msgSet *MessageSet, rpcErr *Error) {
+	var responses BatchResponse
+
+	// Create error responses for all requests (ignore responses)
+	for i := range msgSet.Messages {
+		msg := &msgSet.Messages[i]
+		if msg.IsRequest() {
+			req := msg.ToRequest()
+			if req != nil && !req.IsNotification() {
+				errResp := NewErrorResponse(req.ID, rpcErr, Version30)
+				responses = append(responses, *errResp)
+			}
+		}
+	}
+
+	// Send error responses if any (will be encoded in writeLoop)
+	if len(responses) > 0 {
+		select {
+		case c.writeChan <- responses:
+		case <-c.closeChan:
+		}
+	}
+}
+
 // handleIncomingBatch processes a batch of incoming requests from the client.
 // Batch requests must be processed together to support batch-local references (\0, \1, etc.)
 func (c *WebTransportConn) handleIncomingBatch(msgSet *MessageSet) {
 	// Convert MessageSet to Batch
 	batch, err := msgSet.ToBatch()
 	if err != nil {
+		// Failed to convert - send error responses for all requests
+		c.sendErrorForBatch(msgSet, NewInternalError("failed to parse batch: "+err.Error()))
 		return
 	}
 
@@ -414,6 +444,12 @@ func (c *WebTransportConn) handleIncomingBatch(msgSet *MessageSet) {
 		case <-c.closeChan:
 		}
 	}
+}
+
+// handleInvalidBatch handles a batch with mixed requests and responses.
+// Sends error responses for all requests in the batch.
+func (c *WebTransportConn) handleInvalidBatch(msgSet *MessageSet) {
+	c.sendErrorForBatch(msgSet, NewInvalidRequestError("mixed requests and responses in batch"))
 }
 
 // handleIncomingResponse processes an incoming response to our request.
@@ -442,16 +478,8 @@ func (c *WebTransportConn) writeLoop() {
 	for {
 		select {
 		case item := <-c.writeChan:
-			// Check if item implements MessageSetConvertible
-			convertible, ok := item.(MessageSetConvertible)
-			if !ok {
-				c.notifyPendingRequest(item, fmt.Errorf("unexpected message type: %T", item))
-				c.setError(fmt.Errorf("unexpected message type: %T", item))
-				return
-			}
-
 			// Convert to MessageSet
-			msgSet := convertible.ToMessageSet()
+			msgSet := item.ToMessageSet()
 
 			// Encode the message set
 			data, err := codec.MarshalMessages(msgSet)

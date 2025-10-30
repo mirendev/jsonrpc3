@@ -49,7 +49,7 @@ type WebTransportClient struct {
 
 // NewWebTransportClient creates a new WebTransport client and connects to the server.
 // The rootObject handles incoming method calls from the server.
-// Default encoding is "application/cbor".
+// Default encoding is MimeTypeCBOR.
 //
 // Options:
 //   - WithContentType(contentType) - specify encoding format
@@ -57,7 +57,7 @@ type WebTransportClient struct {
 func NewWebTransportClient(url string, rootObject Object, opts ...ClientOption) (*WebTransportClient, error) {
 	// Apply options with defaults
 	options := &clientOptions{
-		contentType: "application/cbor",
+		contentType: MimeTypeCBOR,
 	}
 	for _, opt := range opts {
 		opt(options)
@@ -332,8 +332,11 @@ func (c *WebTransportClient) readLoop() {
 				msg := &msgSet.Messages[i]
 				c.handleIncomingResponse(msg)
 			}
+		} else {
+			// Mixed request/response batches are invalid
+			// Send error responses for all requests in the batch
+			go c.handleInvalidBatch(&msgSet)
 		}
-		// Mixed request/response batches are invalid, ignore
 	}
 }
 
@@ -356,12 +359,39 @@ func (c *WebTransportClient) handleIncomingRequest(msg *Message) {
 	}
 }
 
+// sendErrorForBatch sends error responses for all non-notification requests in a MessageSet.
+func (c *WebTransportClient) sendErrorForBatch(msgSet *MessageSet, rpcErr *Error) {
+	var responses BatchResponse
+
+	// Create error responses for all requests (ignore responses)
+	for i := range msgSet.Messages {
+		msg := &msgSet.Messages[i]
+		if msg.IsRequest() {
+			req := msg.ToRequest()
+			if req != nil && !req.IsNotification() {
+				errResp := NewErrorResponse(req.ID, rpcErr, Version30)
+				responses = append(responses, *errResp)
+			}
+		}
+	}
+
+	// Send error responses if any (will be encoded in writeLoop)
+	if len(responses) > 0 {
+		select {
+		case c.writeChan <- responses:
+		case <-c.closeChan:
+		}
+	}
+}
+
 // handleIncomingBatch processes a batch of incoming requests from the server.
 // Batch requests must be processed together to support batch-local references (\0, \1, etc.)
 func (c *WebTransportClient) handleIncomingBatch(msgSet *MessageSet) {
 	// Convert MessageSet to Batch
 	batch, err := msgSet.ToBatch()
 	if err != nil {
+		// Failed to convert - send error responses for all requests
+		c.sendErrorForBatch(msgSet, NewInternalError("failed to parse batch: "+err.Error()))
 		return
 	}
 
@@ -375,6 +405,12 @@ func (c *WebTransportClient) handleIncomingBatch(msgSet *MessageSet) {
 		case <-c.closeChan:
 		}
 	}
+}
+
+// handleInvalidBatch handles a batch with mixed requests and responses.
+// Sends error responses for all requests in the batch.
+func (c *WebTransportClient) handleInvalidBatch(msgSet *MessageSet) {
+	c.sendErrorForBatch(msgSet, NewInvalidRequestError("mixed requests and responses in batch"))
 }
 
 // handleIncomingResponse processes an incoming response to our request.

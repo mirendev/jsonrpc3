@@ -34,12 +34,12 @@ func ParseMimeType(mimetype string) MimeType {
 
 // IsCBOR returns true if this is a CBOR mime type.
 func (mt MimeType) IsCBOR() bool {
-	return mt.Type == "application/cbor"
+	return mt.Type == MimeTypeCBOR
 }
 
 // IsJSON returns true if this is a JSON mime type.
 func (mt MimeType) IsJSON() bool {
-	return mt.Type == "application/json"
+	return mt.Type == MimeTypeJSON
 }
 
 // IsCompact returns true if the format is compact.

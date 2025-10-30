@@ -14,8 +14,8 @@ import (
 var (
 	// supportedFormats in order of preference (most efficient first)
 	supportedFormats = []string{
-		"application/cbor",
-		"application/json",
+		MimeTypeCBOR,
+		MimeTypeJSON,
 	}
 )
 
@@ -47,7 +47,7 @@ func NewHTTPClient(url string, httpClient *http.Client) *HTTPClient {
 	client := &HTTPClient{
 		url:         url,
 		httpClient:  httpClient,
-		contentType: "application/cbor",
+		contentType: MimeTypeCBOR,
 	}
 	client.sessionID.Store("")
 
@@ -103,7 +103,7 @@ func (c *HTTPClient) DeleteSession() error {
 }
 
 // SetContentType sets the content type for requests and responses.
-// Supported types: "application/json", "application/cbor", "application/cbor; format=compact"
+// Supported types: MimeTypeJSON, MimeTypeCBOR, MimeTypeCBORCompact
 func (c *HTTPClient) SetContentType(contentType string) {
 	c.contentType = contentType
 }

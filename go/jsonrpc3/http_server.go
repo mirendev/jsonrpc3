@@ -52,9 +52,9 @@ func NewHTTPHandler(rootObject Object) *HTTPHandler {
 	h := &HTTPHandler{
 		rootObject: rootObject,
 		mimeTypes: []string{
-			"application/json",
-			"application/cbor",
-			"application/cbor; format=compact",
+			MimeTypeJSON,
+			MimeTypeCBOR,
+			MimeTypeCBORCompact,
 		},
 		version:     Version30,
 		sessions:    make(map[string]*sessionEntry),
@@ -114,7 +114,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Get content type from request
 	contentType := r.Header.Get("Content-Type")
 	if contentType == "" {
-		contentType = "application/json"
+		contentType = MimeTypeJSON
 	}
 
 	// Read request body
@@ -135,10 +135,9 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		// Send parse error response
 		errResp := NewErrorResponse(nil, NewParseError(err.Error()), h.version)
-		h.writeResponse(w, errResp, contentType)
+		h.writeResponse(w, errResp, contentType, codec)
 		return
 	}
-
 
 	// Check if this was originally a batch (JSON/CBOR array)
 	var req *Request
@@ -148,7 +147,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		req, err = msgSet.ToRequest()
 		if err != nil {
 			errResp := NewErrorResponse(nil, NewParseError(err.Error()), h.version)
-			h.writeResponse(w, errResp, contentType)
+			h.writeResponse(w, errResp, contentType, codec)
 			return
 		}
 	} else {
@@ -156,7 +155,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		isBatch = true
 		if err != nil {
 			errResp := NewErrorResponse(nil, NewParseError(err.Error()), h.version)
-			h.writeResponse(w, errResp, contentType)
+			h.writeResponse(w, errResp, contentType, codec)
 			return
 		}
 	}
@@ -170,7 +169,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	// Handle SSE mode if client refs detected
 	if useSSE {
-		h.handleSSERequest(w, r, req, handler, contentType, sessionID, wasExisting, session)
+		h.handleSSERequest(w, r, codec, req, handler, contentType, sessionID, wasExisting, session)
 		return
 	}
 
@@ -188,7 +187,6 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if hasResponse {
 			var err error
 			msgSet := batchResponses.ToMessageSet()
-			codec := GetCodec(contentType)
 			batchData, err = codec.MarshalMessages(msgSet)
 			if err != nil {
 				http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -233,7 +231,7 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	} else {
 		if hasResponse {
-			h.writeResponse(w, resp, contentType)
+			h.writeResponse(w, resp, contentType, codec)
 		} else {
 			// Notification - return 204 No Content
 			w.WriteHeader(http.StatusNoContent)
@@ -242,9 +240,8 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 // writeResponse encodes and writes a single response.
-func (h *HTTPHandler) writeResponse(w http.ResponseWriter, resp *Response, contentType string) {
+func (h *HTTPHandler) writeResponse(w http.ResponseWriter, resp *Response, contentType string, codec Codec) {
 	msgSet := resp.ToMessageSet()
-	codec := GetCodec(contentType)
 	data, err := codec.MarshalMessages(msgSet)
 	if err != nil {
 		http.Error(w, "Failed to encode response", http.StatusInternalServerError)
@@ -415,10 +412,17 @@ func writeSSEEvent(w http.ResponseWriter, flusher http.Flusher, data []byte) err
 // handleSSERequest handles a request that contains client references using SSE.
 // It sends the response as an SSE stream, allowing for notifications to be sent
 // to client callback objects during request processing.
-func (h *HTTPHandler) handleSSERequest(w http.ResponseWriter, r *http.Request,
-	req *Request, handler *Handler, contentType string,
-	sessionID string, wasExisting bool, session *Session) {
-
+func (h *HTTPHandler) handleSSERequest(
+	w http.ResponseWriter,
+	r *http.Request,
+	codec Codec,
+	req *Request,
+	handler *Handler,
+	contentType string,
+	sessionID string,
+	wasExisting bool,
+	session *Session,
+) {
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
 	w.Header().Set("Cache-Control", "no-cache")
@@ -455,7 +459,6 @@ func (h *HTTPHandler) handleSSERequest(w http.ResponseWriter, r *http.Request,
 	// Encode and send result as SSE event
 	if resp != nil {
 		msgSet := resp.ToMessageSet()
-		codec := GetCodec(contentType)
 		respData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
 			// Can't send error response at this point, connection is already open

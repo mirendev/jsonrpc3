@@ -24,9 +24,9 @@ func NewWebSocketHandler(rootObject Object) *WebSocketHandler {
 	return &WebSocketHandler{
 		rootObject: rootObject,
 		mimeTypes: []string{
-			"application/json",
-			"application/cbor",
-			"application/cbor; format=compact",
+			MimeTypeJSON,
+			MimeTypeCBOR,
+			MimeTypeCBORCompact,
 		},
 		upgrader: websocket.Upgrader{
 			Subprotocols: []string{
@@ -53,12 +53,12 @@ func (h *WebSocketHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Determine content type from accepted subprotocol
-	contentType := "application/json"
+	contentType := MimeTypeJSON
 	switch conn.Subprotocol() {
 	case "jsonrpc3.cbor":
-		contentType = "application/cbor"
+		contentType = MimeTypeCBOR
 	case "jsonrpc3.cbor-compact":
-		contentType = "application/cbor; format=compact"
+		contentType = MimeTypeCBORCompact
 	}
 
 	// Create connection handler
@@ -301,26 +301,41 @@ func (c *WebSocketConn) readLoop() {
 			continue
 		}
 
-		// Process single message (WebSocket doesn't support batch)
-		if len(msgSet.Messages) != 1 {
-			continue
+		// Check if all messages are requests or all are responses
+		allRequests := true
+		allResponses := true
+		for i := range msgSet.Messages {
+			if !msgSet.Messages[i].IsRequest() {
+				allRequests = false
+			}
+			if !msgSet.Messages[i].IsResponse() {
+				allResponses = false
+			}
 		}
 
-		msg := &msgSet.Messages[0]
-
-		// Dispatch based on message type
-		if msg.IsRequest() {
-			// Incoming request from client
-			go c.handleIncomingRequest(msg)
-		} else if msg.IsResponse() {
-			// Response to our request
-			c.handleIncomingResponse(msg)
+		// Handle batch requests as a unit (preserves batch-local references)
+		if allRequests && msgSet.IsBatch {
+			go c.handleIncomingBatch(codec, &msgSet)
+		} else if allRequests {
+			// Single request
+			msg := &msgSet.Messages[0]
+			go c.handleIncomingRequest(codec, msg)
+		} else if allResponses {
+			// Process responses individually (no batch context needed)
+			for i := range msgSet.Messages {
+				msg := &msgSet.Messages[i]
+				c.handleIncomingResponse(msg)
+			}
+		} else {
+			// Mixed request/response batches are invalid
+			// Send error responses for all requests in the batch
+			go c.handleInvalidBatch(codec, &msgSet)
 		}
 	}
 }
 
 // handleIncomingRequest processes an incoming request from the client.
-func (c *WebSocketConn) handleIncomingRequest(msg *Message) {
+func (c *WebSocketConn) handleIncomingRequest(codec Codec, msg *Message) {
 	req := msg.ToRequest()
 	if req == nil {
 		return
@@ -331,7 +346,6 @@ func (c *WebSocketConn) handleIncomingRequest(msg *Message) {
 
 	// Send response if not a notification
 	if resp != nil {
-		codec := GetCodec(c.contentType)
 		msgSet := resp.ToMessageSet()
 		respData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
@@ -343,6 +357,75 @@ func (c *WebSocketConn) handleIncomingRequest(msg *Message) {
 		case <-c.closeChan:
 		}
 	}
+}
+
+// sendErrorForBatch sends error responses for all non-notification requests in a MessageSet.
+func (c *WebSocketConn) sendErrorForBatch(codec Codec, msgSet *MessageSet, rpcErr *Error) {
+	var responses BatchResponse
+
+	// Create error responses for all requests (ignore responses)
+	for i := range msgSet.Messages {
+		msg := &msgSet.Messages[i]
+		if msg.IsRequest() {
+			req := msg.ToRequest()
+			if req != nil && !req.IsNotification() {
+				errResp := NewErrorResponse(req.ID, rpcErr, Version30)
+				responses = append(responses, *errResp)
+			}
+		}
+	}
+
+	// Send error responses if any
+	if len(responses) > 0 {
+		batchMsgSet := responses.ToMessageSet()
+		respData, err := codec.MarshalMessages(batchMsgSet)
+		if err != nil {
+			// Can't encode error responses - nothing more we can do
+			return
+		}
+
+		select {
+		case c.writeChan <- respData:
+		case <-c.closeChan:
+		}
+	}
+}
+
+// handleIncomingBatch processes a batch of incoming requests from the client.
+// Batch requests must be processed together to support batch-local references (\0, \1, etc.)
+func (c *WebSocketConn) handleIncomingBatch(codec Codec, msgSet *MessageSet) {
+	// Convert MessageSet to Batch
+	batch, err := msgSet.ToBatch()
+	if err != nil {
+		// Failed to convert - send error responses for all requests
+		c.sendErrorForBatch(codec, msgSet, NewInternalError("failed to parse batch: "+err.Error()))
+		return
+	}
+
+	// Handle batch via handler (preserves batch-local references)
+	responses := c.handler.HandleBatch(batch)
+
+	// Send batch response as a unit
+	if len(responses) > 0 {
+		batchMsgSet := responses.ToMessageSet()
+		respData, err := codec.MarshalMessages(batchMsgSet)
+		if err != nil {
+			// Failed to encode responses - send error responses for all requests
+			c.sendErrorForBatch(codec, msgSet, NewInternalError("failed to encode response: "+err.Error()))
+			return
+		}
+
+		select {
+		case c.writeChan <- respData:
+		case <-c.closeChan:
+		}
+	}
+}
+
+// handleInvalidBatch handles a batch with mixed requests and responses.
+// Sends error responses for all requests in the batch.
+func (c *WebSocketConn) handleInvalidBatch(codec Codec, msgSet *MessageSet) {
+	c.sendErrorForBatch(codec, msgSet, NewInvalidRequestError("mixed requests and responses in batch"))
 }
 
 // handleIncomingResponse processes an incoming response to our request.

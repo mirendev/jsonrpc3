@@ -18,7 +18,7 @@ type Handler struct {
 // The rootObject handles top-level method calls (requests without a ref field).
 func NewHandler(session *Session, rootObject Object, mimeTypes []string) *Handler {
 	if mimeTypes == nil {
-		mimeTypes = []string{"application/json"}
+		mimeTypes = []string{MimeTypeJSON}
 	}
 	return &Handler{
 		session:    session,
@@ -67,7 +67,7 @@ func (h *Handler) HandleRequest(req *Request) *Response {
 		// Use the request's format for the response
 		format := req.format
 		if format == "" {
-			format = "application/json"
+			format = MimeTypeJSON
 		}
 		resp, marshalErr := NewSuccessResponseWithFormat(req.ID, processedResult, h.version, format)
 		if marshalErr != nil {
@@ -115,7 +115,7 @@ func (h *Handler) handleMethod(req *Request) *Response {
 	// Use the request's format for the response
 	format := req.format
 	if format == "" {
-		format = "application/json"
+		format = MimeTypeJSON
 	}
 	resp, marshalErr := NewSuccessResponseWithFormat(req.ID, processedResult, h.version, format)
 	if marshalErr != nil {
@@ -156,7 +156,7 @@ func (h *Handler) handleRefMethod(req *Request) *Response {
 	// Use the request's format for the response
 	format := req.format
 	if format == "" {
-		format = "application/json"
+		format = MimeTypeJSON
 	}
 	resp, marshalErr := NewSuccessResponseWithFormat(req.ID, processedResult, h.version, format)
 	if marshalErr != nil {
@@ -295,9 +295,9 @@ func (h *Handler) errorResponse(id any, err *Error) *Response {
 // DecodeRequest decodes a JSON-RPC request from bytes using the specified mimetype.
 // It handles both single requests and batch requests.
 // Supported mimetypes:
-//   - "application/json": JSON encoding
-//   - "application/cbor": Standard CBOR encoding (string keys)
-//   - "application/cbor; format=compact": Compact CBOR encoding (integer keys)
+//   - MimeTypeJSON: JSON encoding
+//   - MimeTypeCBOR: Standard CBOR encoding (string keys)
+//   - MimeTypeCBORCompact: Compact CBOR encoding (integer keys)
 //
 // Returns (request, batch, isBatch, error).
 func DecodeRequest(data []byte, mimetype string) (*Request, Batch, bool, error) {

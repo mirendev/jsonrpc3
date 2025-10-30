@@ -7,6 +7,13 @@ import (
 	"github.com/fxamacker/cbor/v2"
 )
 
+// MIME type constants for JSON-RPC 3.0 encoding formats
+const (
+	MimeTypeJSON        = "application/json"
+	MimeTypeCBOR        = "application/cbor"
+	MimeTypeCBORCompact = "application/cbor; format=compact"
+)
+
 // MessageMarshaller marshals MessageSet to bytes.
 type MessageMarshaller interface {
 	MarshalMessages(msgs MessageSet) ([]byte, error)
@@ -366,7 +373,7 @@ func GetCodec(mimetype string) Codec {
 
 	// Handle bare "cbor" string for backward compatibility
 	if mimetype == "cbor" {
-		return cborCodec{mimetype: "application/cbor"}
+		return cborCodec{mimetype: MimeTypeCBOR}
 	}
 
 	// Default to JSON

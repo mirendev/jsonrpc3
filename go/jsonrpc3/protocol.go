@@ -14,7 +14,7 @@ type ProtocolHandler struct {
 // NewProtocolHandler creates a new protocol handler for a session.
 func NewProtocolHandler(session *Session, mimeTypes []string) *ProtocolHandler {
 	if mimeTypes == nil {
-		mimeTypes = []string{"application/json"}
+		mimeTypes = []string{MimeTypeJSON}
 	}
 	return &ProtocolHandler{
 		session:   session,
