@@ -25,6 +25,10 @@ type Peer struct {
 	pendingReqs sync.Map // id (any) -> chan *Response
 	nextID      atomic.Int64
 
+	// Reference ID generation
+	refPrefix  string // Random connection-specific prefix for refs
+	refCounter atomic.Int64
+
 	// Message channels
 	writeChan chan MessageSetConvertible // Messages to encode and send
 	closeChan chan struct{}
@@ -70,6 +74,9 @@ func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...Clie
 	mimeTypes := []string{options.contentType}
 	handler := NewHandler(session, rootObject, mimeTypes)
 
+	// Generate random connection ID prefix
+	refPrefix := generateConnID()
+
 	peer := &Peer{
 		reader:      reader,
 		writer:      writer,
@@ -77,6 +84,7 @@ func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...Clie
 		handler:     handler,
 		rootObject:  rootObject,
 		contentType: options.contentType,
+		refPrefix:   refPrefix,
 		writeChan:   make(chan MessageSetConvertible, 100),
 		closeChan:   make(chan struct{}),
 		ctx:         ctx,
@@ -196,8 +204,15 @@ func (p *Peer) NotifyRef(ref string, method string, params any) error {
 }
 
 // RegisterObject registers a local object that the remote peer can call.
-func (p *Peer) RegisterObject(ref string, obj Object) {
+// If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
+// Returns the reference ID that was used (either the provided one or the generated one).
+func (p *Peer) RegisterObject(ref string, obj Object) string {
+	if ref == "" {
+		counter := p.refCounter.Add(1)
+		ref = fmt.Sprintf("%s-%d", p.refPrefix, counter)
+	}
 	p.handler.session.AddLocalRef(ref, obj)
+	return ref
 }
 
 // UnregisterObject removes a registered local object.

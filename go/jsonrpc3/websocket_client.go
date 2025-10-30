@@ -26,6 +26,10 @@ type WebSocketClient struct {
 	pendingReqs sync.Map // id (any) -> chan *Response
 	nextID      atomic.Int64
 
+	// Reference ID generation
+	refPrefix  string // Random connection-specific prefix for refs
+	refCounter atomic.Int64
+
 	// Message channels
 	writeChan chan []byte
 	closeChan chan struct{}
@@ -144,6 +148,9 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 	mimeTypes := []string{acceptedContentType}
 	handler := NewHandler(session, rootObject, mimeTypes)
 
+	// Generate random connection ID prefix
+	refPrefix := generateConnID()
+
 	client := &WebSocketClient{
 		url:         url,
 		conn:        conn,
@@ -151,6 +158,7 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 		handler:     handler,
 		rootObject:  rootObject,
 		contentType: acceptedContentType,
+		refPrefix:   refPrefix,
 		writeChan:   make(chan []byte, 100),
 		closeChan:   make(chan struct{}),
 		ctx:         ctx,
@@ -278,8 +286,15 @@ func (c *WebSocketClient) NotifyRef(ref string, method string, params any) error
 }
 
 // RegisterObject registers a local object that the server can call.
-func (c *WebSocketClient) RegisterObject(ref string, obj Object) {
+// If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
+// Returns the reference ID that was used (either the provided one or the generated one).
+func (c *WebSocketClient) RegisterObject(ref string, obj Object) string {
+	if ref == "" {
+		counter := c.refCounter.Add(1)
+		ref = fmt.Sprintf("%s-%d", c.refPrefix, counter)
+	}
 	c.handler.session.AddLocalRef(ref, obj)
+	return ref
 }
 
 // UnregisterObject removes a registered local object.

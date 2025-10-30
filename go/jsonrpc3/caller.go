@@ -16,7 +16,9 @@ type Caller interface {
 	NotifyRef(ref string, method string, params any) error
 
 	// RegisterObject registers a local object that the remote peer can call.
-	RegisterObject(ref string, obj Object)
+	// If ref is empty, a random reference ID is generated.
+	// Returns the reference ID that was used (either the provided one or the generated one).
+	RegisterObject(ref string, obj Object) string
 
 	// UnregisterObject removes a registered local object.
 	UnregisterObject(ref string)

@@ -29,6 +29,10 @@ type WebTransportClient struct {
 	pendingReqs sync.Map // id (any) -> chan *Response
 	nextID      atomic.Int64
 
+	// Reference ID generation
+	refPrefix  string // Random connection-specific prefix for refs
+	refCounter atomic.Int64
+
 	// Message channels
 	writeChan chan any // Messages to encode and send
 	closeChan chan struct{}
@@ -110,6 +114,7 @@ func newWebTransportClient(url string, rootObject Object, options *clientOptions
 		rootObject:    rootObject,
 		contentType:   acceptedContentType,
 		controlStream: controlStream,
+		refPrefix:     generateConnID(),
 		writeChan:     make(chan any, 100),
 		closeChan:     make(chan struct{}),
 		ctx:           ctx,
@@ -221,8 +226,15 @@ func (c *WebTransportClient) NotifyRef(ref string, method string, params any) er
 }
 
 // RegisterObject registers a local object that the server can call.
-func (c *WebTransportClient) RegisterObject(ref string, obj Object) {
+// If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
+// Returns the reference ID that was used (either the provided one or the generated one).
+func (c *WebTransportClient) RegisterObject(ref string, obj Object) string {
+	if ref == "" {
+		counter := c.refCounter.Add(1)
+		ref = fmt.Sprintf("%s-%d", c.refPrefix, counter)
+	}
 	c.handler.session.AddLocalRef(ref, obj)
+	return ref
 }
 
 // UnregisterObject removes a registered local object.

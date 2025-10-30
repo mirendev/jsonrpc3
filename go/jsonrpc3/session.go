@@ -1,6 +1,8 @@
 package jsonrpc3
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"sync"
 	"sync/atomic"
@@ -277,4 +279,16 @@ func disposeObject(obj any) {
 	if closeable, ok := obj.(Closeable); ok {
 		_ = closeable.Close() // Ignore errors during disposal
 	}
+}
+
+// generateConnID generates a random 2-byte connection ID prefix encoded as hex.
+// This is used to create unique reference IDs for each connection.
+// Returns a 4-character hex string (e.g., "a3f2").
+func generateConnID() string {
+	var connIDBytes [2]byte
+	if _, err := rand.Read(connIDBytes[:]); err != nil {
+		// Fallback to zero if random generation fails
+		connIDBytes = [2]byte{0, 0}
+	}
+	return hex.EncodeToString(connIDBytes[:])
 }
