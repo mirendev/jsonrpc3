@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"fmt"
 	"io"
 	"sync"
 	"sync/atomic"
@@ -434,6 +435,8 @@ func TestPeer_CloseHandling(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "test", result)
 
+	fmt.Println("Closing peer1")
+
 	// Close peer1
 	peer1.Close()
 	r1.Close()
@@ -441,6 +444,8 @@ func TestPeer_CloseHandling(t *testing.T) {
 
 	// Wait a moment for close to propagate
 	time.Sleep(100 * time.Millisecond)
+
+	fmt.Println("Making call to closed peer1")
 
 	// Try to call - should fail
 	err = peer2.Call("echo", "test", &result)

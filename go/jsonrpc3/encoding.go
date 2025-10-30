@@ -40,13 +40,13 @@ type MessageDecoderFactory interface {
 }
 
 // Codec combines message marshalling, unmarshalling, and streaming encoding/decoding for a specific format.
-type Codec struct {
+type Codec interface {
 	MessageMarshaller
 	MessageUnmarshaller
 	MessageDecoderFactory
 	MessageEncoderFactory
-	Marshaller    // Legacy support for generic encoding
-	Unmarshaller  // Legacy support for generic decoding
+	Marshaller   // Legacy support for generic encoding
+	Unmarshaller // Legacy support for generic decoding
 }
 
 // Legacy interfaces for generic encoding (kept for backward compatibility with RawMessage encoding)
@@ -322,48 +322,16 @@ func GetCodec(mimetype string) Codec {
 
 	if mt.IsCBOR() {
 		if mt.IsCompact() {
-			c := compactCBORCodec{}
-			return Codec{
-				MessageMarshaller:     c,
-				MessageUnmarshaller:   c,
-				MessageDecoderFactory: c,
-				MessageEncoderFactory: c,
-				Marshaller:            c,
-				Unmarshaller:          c,
-			}
+			return compactCBORCodec{}
 		}
-		c := cborCodec{}
-		return Codec{
-			MessageMarshaller:     c,
-			MessageUnmarshaller:   c,
-			MessageDecoderFactory: c,
-			MessageEncoderFactory: c,
-			Marshaller:            c,
-			Unmarshaller:          c,
-		}
+		return cborCodec{}
 	}
 
 	// Handle bare "cbor" string for backward compatibility
 	if mimetype == "cbor" {
-		c := cborCodec{}
-		return Codec{
-			MessageMarshaller:     c,
-			MessageUnmarshaller:   c,
-			MessageDecoderFactory: c,
-			MessageEncoderFactory: c,
-			Marshaller:            c,
-			Unmarshaller:          c,
-		}
+		return cborCodec{}
 	}
 
 	// Default to JSON
-	c := jsonCodec{}
-	return Codec{
-		MessageMarshaller:     c,
-		MessageUnmarshaller:   c,
-		MessageDecoderFactory: c,
-		MessageEncoderFactory: c,
-		Marshaller:            c,
-		Unmarshaller:          c,
-	}
+	return jsonCodec{}
 }

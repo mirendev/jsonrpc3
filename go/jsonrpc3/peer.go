@@ -26,7 +26,7 @@ type Peer struct {
 	nextID      atomic.Int64
 
 	// Message channels
-	writeChan chan any // Messages to encode and send
+	writeChan chan MessageSetConvertible // Messages to encode and send
 	closeChan chan struct{}
 	closeOnce sync.Once
 
@@ -77,7 +77,7 @@ func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...Clie
 		handler:     handler,
 		rootObject:  rootObject,
 		contentType: options.contentType,
-		writeChan:   make(chan any, 100),
+		writeChan:   make(chan MessageSetConvertible, 100),
 		closeChan:   make(chan struct{}),
 		ctx:         ctx,
 		cancel:      cancel,
@@ -157,7 +157,7 @@ func (p *Peer) CallRef(ref string, method string, params any, result any) error 
 		return nil
 
 	case <-ctx.Done():
-		return fmt.Errorf("request timeout")
+		return ctx.Err()
 
 	case <-p.closeChan:
 		return fmt.Errorf("connection closed")
@@ -360,31 +360,61 @@ func (p *Peer) writeLoop() {
 	for {
 		select {
 		case item := <-p.writeChan:
-			// Check if item implements MessageSetConvertible
-			convertible, ok := item.(MessageSetConvertible)
-			if !ok {
-				p.setError(fmt.Errorf("unexpected message type: %T", item))
-				return
-			}
-
 			// Convert to MessageSet
-			msgSet := convertible.ToMessageSet()
+			msgSet := item.ToMessageSet()
 
 			// Encode the message set
 			data, err := codec.MarshalMessages(msgSet)
 			if err != nil {
+				p.notifyPendingRequest(item, fmt.Errorf("marshal error: %w", err))
 				p.setError(fmt.Errorf("marshal error: %w", err))
 				return
 			}
 
 			// Write to stream
 			if _, err := p.writer.Write(data); err != nil {
+				p.notifyPendingRequest(item, fmt.Errorf("write error: %w", err))
 				p.setError(fmt.Errorf("write error: %w", err))
 				return
 			}
 
 		case <-p.closeChan:
 			return
+		}
+	}
+}
+
+// notifyPendingRequest checks if the item is a Request with a pending waiter,
+// and if so, sends a synthetic error response to unblock the caller.
+func (p *Peer) notifyPendingRequest(item any, err error) {
+	// Check if this is a Request (not a Response or BatchResponse)
+	req, ok := item.(*Request)
+	if !ok {
+		return
+	}
+
+	// Only handle requests with IDs (not notifications)
+	if req.ID == nil {
+		return
+	}
+
+	// Check if there's a pending waiter for this request
+	if value, ok := p.pendingReqs.Load(req.ID); ok {
+		if respChan, ok := value.(chan *Response); ok {
+			// Create synthetic error response
+			syntheticResp := &Response{
+				JSONRPC: req.JSONRPC,
+				Error:   NewInternalError(fmt.Sprintf("Failed to send request: %v", err)),
+				ID:      req.ID,
+			}
+
+			// Try to send the error response to the waiting channel
+			select {
+			case respChan <- syntheticResp:
+				// Successfully notified the waiter
+			default:
+				// Channel full or closed, ignore
+			}
 		}
 	}
 }

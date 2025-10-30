@@ -401,6 +401,7 @@ func (c *WebTransportClient) writeLoop() {
 			// Check if item implements MessageSetConvertible
 			convertible, ok := item.(MessageSetConvertible)
 			if !ok {
+				c.notifyPendingRequest(item, fmt.Errorf("unexpected message type: %T", item))
 				c.setError(fmt.Errorf("unexpected message type: %T", item))
 				return
 			}
@@ -411,18 +412,55 @@ func (c *WebTransportClient) writeLoop() {
 			// Encode the message set
 			data, err := codec.MarshalMessages(msgSet)
 			if err != nil {
+				c.notifyPendingRequest(item, fmt.Errorf("marshal error: %w", err))
 				c.setError(fmt.Errorf("marshal error: %w", err))
 				return
 			}
 
 			// Write to stream
 			if _, err := c.controlStream.Write(data); err != nil {
+				c.notifyPendingRequest(item, fmt.Errorf("write error: %w", err))
 				c.setError(fmt.Errorf("write error: %w", err))
 				return
 			}
 
 		case <-c.closeChan:
 			return
+		}
+	}
+}
+
+// notifyPendingRequest checks if the item is a Request with a pending waiter,
+// and if so, sends a synthetic error response to unblock the caller.
+func (c *WebTransportClient) notifyPendingRequest(item any, err error) {
+	// Check if this is a Request (not a Response or BatchResponse)
+	req, ok := item.(*Request)
+	if !ok {
+		return
+	}
+
+	// Only handle requests with IDs (not notifications)
+	if req.ID == nil {
+		return
+	}
+
+	// Check if there's a pending waiter for this request
+	if value, ok := c.pendingReqs.Load(req.ID); ok {
+		if respChan, ok := value.(chan *Response); ok {
+			// Create synthetic error response
+			syntheticResp := &Response{
+				JSONRPC: req.JSONRPC,
+				Error:   NewInternalError(fmt.Sprintf("Failed to send request: %v", err)),
+				ID:      req.ID,
+			}
+
+			// Try to send the error response to the waiting channel
+			select {
+			case respChan <- syntheticResp:
+				// Successfully notified the waiter
+			default:
+				// Channel full or closed, ignore
+			}
 		}
 	}
 }
