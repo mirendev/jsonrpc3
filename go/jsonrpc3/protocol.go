@@ -73,6 +73,8 @@ func (h *ProtocolHandler) CallMethod(method string, params Params) (any, error) 
 		return h.handleDisposeAll(params)
 	case "mimetypes":
 		return h.handleMimeTypes(params)
+	case "capabilities":
+		return h.handleCapabilities(params)
 	default:
 		return nil, NewMethodNotFoundError(method)
 	}
@@ -167,6 +169,28 @@ func (h *ProtocolHandler) handleMimeTypes(params Params) (any, error) {
 	return &MimeTypesResult{
 		MimeTypes: h.mimeTypes,
 	}, nil
+}
+
+// handleCapabilities implements the capabilities() method.
+func (h *ProtocolHandler) handleCapabilities(params Params) (any, error) {
+	capabilities := []string{
+		"references",
+		"batch-local-references",
+		"bidirectional-calls",
+		"introspection",
+	}
+
+	// Add encoding capabilities based on supported MIME types
+	for _, mimeType := range h.mimeTypes {
+		switch mimeType {
+		case MimeTypeCBOR:
+			capabilities = append(capabilities, "cbor-encoding")
+		case MimeTypeCBORCompact:
+			capabilities = append(capabilities, "cbor-compact-encoding")
+		}
+	}
+
+	return capabilities, nil
 }
 
 // convertRefInfo converts internal RefInfo to protocol RefInfoResult.

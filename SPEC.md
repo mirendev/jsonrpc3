@@ -1201,6 +1201,57 @@ Retrieves the list of MIME types (encodings) supported by the server. This is us
 
 This response indicates the server only supports JSON encoding.
 
+##### 3.4.2.7. `capabilities`
+
+**Parameters:** None
+
+**Returns:** An array of capability strings indicating optional features supported by the implementation
+
+**Purpose:** Allows peers to discover which optional protocol features are supported. This is purely informational—peers will attempt to function regardless of whether capabilities are checked.
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "$rpc",
+  "method": "capabilities",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": [
+    "references",
+    "batch-local-references",
+    "bidirectional-calls",
+    "introspection",
+    "cbor-encoding",
+    "cbor-compact-encoding"
+  ],
+  "id": 1
+}
+```
+
+**Standard Capabilities:**
+
+The following capability strings are defined by this specification:
+
+- **`references`**: Supports JSON-RPC 3.0 object references (local and remote references)
+- **`batch-local-references`**: Supports batch-local references (`\0`, `\1`, etc.) as defined in section 3.6
+- **`bidirectional-calls`**: Supports both parties initiating method calls (client and server can both call methods on each other)
+- **`introspection`**: Supports object introspection methods (`$methods` and `$type`)
+- **`cbor-encoding`**: Supports CBOR encoding (`application/cbor`)
+- **`cbor-compact-encoding`**: Supports compact CBOR encoding (`application/cbor; format=compact`)
+
+**Implementation Notes:**
+- Implementations MAY return custom capability strings prefixed with an organization or implementation identifier (e.g., `"myorg:custom-feature"`)
+- Clients SHOULD gracefully handle unknown capability strings
+- The absence of a capability in the list does not necessarily mean the feature is unsupported—implementations may support features without advertising them
+- This method is purely informational and best-effort; peers should attempt functionality regardless of capabilities
+
 #### 3.4.3. Security Considerations
 
 Implementations SHOULD consider the following security implications of protocol methods:
@@ -1223,11 +1274,112 @@ Implementations SHOULD consider the following security implications of protocol 
 
 - Protocol methods MUST be safe to call from either party (client or server) in bidirectional connections.
 
-### 3.5. Batch-Local References
+### 3.5. Object Introspection Methods
+
+JSON-RPC 3.0 defines optional introspection methods that objects can implement to provide information about themselves. These methods are invoked on object references (including the root object when no `ref` is specified) rather than on the `$rpc` protocol handler.
+
+#### 3.5.1. The `$methods` Method
+
+Objects MAY implement a `$methods` method that returns a list of method names the object supports.
+
+**Parameters:** None
+
+**Returns:** An array of strings representing method names supported by the object
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "calculator-1",
+  "method": "$methods",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": [
+    "add",
+    "subtract",
+    "multiply",
+    "divide",
+    "clear"
+  ],
+  "id": 1
+}
+```
+
+**Implementation Notes:**
+- The `$methods` method itself SHOULD be included in the returned list
+- If the object also implements `$type`, it SHOULD be included in the list
+- Implementations MAY choose to exclude internal or private methods from the list
+- The absence of `$methods` support means the object does not provide this introspection capability
+
+#### 3.5.2. The `$type` Method
+
+Objects MAY implement a `$type` method that returns a string describing the object's type or class.
+
+**Parameters:** None
+
+**Returns:** A string describing the object's type
+
+**Purpose:** Provides type information for objects, enabling clients to understand what kind of object they're working with. The format and content of the type string is implementation-defined.
+
+**Example:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "calculator-1",
+  "method": "$type",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": "Calculator",
+  "id": 1
+}
+```
+
+**Alternative type formats:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": "com.example.Calculator",
+  "id": 1
+}
+```
+
+```json
+{
+  "jsonrpc": "3.0",
+  "result": "database:connection",
+  "id": 1
+}
+```
+
+**Implementation Notes:**
+- The type string format is implementation-defined—it can be a simple name, a fully-qualified class name, a URI, or any other identifying string
+- Clients SHOULD NOT assume any particular format for type strings
+- Type strings are purely informational and do not imply any behavioral contract
+- The absence of `$type` support means the object does not provide type information
+
+#### 3.5.3. Introspection and Capabilities
+
+If an implementation supports introspection methods (`$methods` and/or `$type`), it SHOULD advertise the `"introspection"` capability in its `capabilities` method response (see section 3.4.2.7).
+
+Objects are not required to support introspection even if the implementation advertises the capability—the capability indicates that some objects in the system support introspection, not that all objects do.
+
+### 3.6. Batch-Local References
 
 JSON-RPC 3.0 provides a special mechanism for batch requests that allows operations to be pipelined without requiring round-trip communication. This is accomplished using **batch-local references** that automatically resolve to the results of previous requests within the same batch.
 
-#### 3.5.1. Batch-Local Reference Format
+#### 3.6.1. Batch-Local Reference Format
 
 Batch-local references use a special syntax: a backslash followed by a number (e.g., `\0`, `\1`, `\2`). The number indicates the zero-based index of a request within the same batch.
 
@@ -1238,7 +1390,7 @@ Batch-local references use a special syntax: a backslash followed by a number (e
 - `\1` - Refers to the result of the second request (index 1) in the batch
 - `\2` - Refers to the result of the third request (index 2) in the batch
 
-#### 3.5.2. Resolution Semantics
+#### 3.6.2. Resolution Semantics
 
 When a batch-local reference appears in the `ref` field of a request within a batch:
 
@@ -1248,7 +1400,7 @@ When a batch-local reference appears in the `ref` field of a request within a ba
 4. **Reference Type**: If the result at index N is a LocalReference (`{"$ref": "..."}`), the batch-local reference resolves to that reference identifier
 5. **Error Propagation**: If the referenced request (index N) results in an error, the current request MUST fail with a reference error
 
-#### 3.5.3. Example: Database Query Pipeline
+#### 3.6.3. Example: Database Query Pipeline
 
 This example shows opening a database and immediately querying it in a single batch request:
 
@@ -1298,7 +1450,7 @@ This example shows opening a database and immediately querying it in a single ba
 3. The server invokes `query` on the database connection
 4. Both results are returned in a single response
 
-#### 3.5.4. Example: Chaining Multiple Operations
+#### 3.6.4. Example: Chaining Multiple Operations
 
 Batch-local references can chain multiple operations together:
 
@@ -1330,7 +1482,7 @@ Batch-local references can chain multiple operations together:
 
 This creates a workspace, creates a document in that workspace, and writes content to the document—all in a single batch request.
 
-#### 3.5.5. Error Handling
+#### 3.6.5. Error Handling
 
 If a referenced request fails, the dependent request MUST also fail:
 
@@ -1377,7 +1529,7 @@ If a referenced request fails, the dependent request MUST also fail:
 ]
 ```
 
-#### 3.5.6. Implementation Requirements
+#### 3.6.6. Implementation Requirements
 
 Implementations that support batch-local references MUST:
 
@@ -1387,7 +1539,7 @@ Implementations that support batch-local references MUST:
 4. **Error on Forward References**: Return an error if a request references a later request in the batch (index >= current)
 5. **Error on Failed References**: If a referenced request fails, the dependent request MUST fail with code -32001 (Invalid reference)
 
-#### 3.5.7. Non-Reference Results
+#### 3.6.7. Non-Reference Results
 
 If a batch-local reference `\N` points to a request whose result is NOT a LocalReference (e.g., a plain value like a number or string), the implementation SHOULD return an error with code -32003 (Reference type error).
 
