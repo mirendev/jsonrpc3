@@ -14,16 +14,16 @@ export const Version30 = "3.0";
 export type RequestId = string | number | null;
 
 /**
- * LocalReference represents an object reference in wire format
+ * Reference represents an object reference in wire format
  */
-export interface LocalReference {
+export interface Reference {
   $ref: string;
 }
 
 /**
- * Check if a value is a LocalReference
+ * Check if a value is a Reference
  */
-export function isLocalReference(value: unknown): value is LocalReference {
+export function isReference(value: unknown): value is Reference {
   return (
     typeof value === "object" &&
     value !== null &&

@@ -6,7 +6,7 @@
 // Types
 export type {
   RequestId,
-  LocalReference,
+  Reference,
   Request,
   Response,
   Message,
@@ -18,7 +18,7 @@ export type {
 export {
   Version20,
   Version30,
-  isLocalReference,
+  isReference,
   isRequest,
   isResponse,
   isNotification,

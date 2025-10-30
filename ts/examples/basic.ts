@@ -2,7 +2,7 @@
  * Basic JSON-RPC 3.0 example with HTTP transport
  */
 
-import { Session, Handler, MethodMap, HttpServer, HttpClient, type LocalReference } from "../src/index.ts";
+import { Session, Handler, MethodMap, HttpServer, HttpClient, type Reference } from "../src/index.ts";
 
 // Create a server
 const serverSession = new Session();
@@ -62,10 +62,10 @@ try {
   console.log(greeting); // "Hello, Alice!"
 
   // Create an object and get reference
-  const counterRef = await client.call("createCounter") as LocalReference;
+  const counterRef = await client.call("createCounter") as Reference;
   console.log("Created counter:", counterRef); // { $ref: "ref-..." }
 
-  // Call methods on the counter object (can pass LocalReference directly)
+  // Call methods on the counter object (can pass Reference directly)
   const val1 = await client.call("increment", undefined, counterRef);
   console.log("After increment:", val1); // 1
 

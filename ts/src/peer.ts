@@ -5,8 +5,8 @@
 
 import { nanoid } from "nanoid";
 import { Session, type RpcObject } from "./session.ts";
-import type { Request, Response, Message, MessageSet, Batch, BatchResponse, LocalReference, RequestId } from "./types.ts";
-import { newRequest, isLocalReference, toBatch, batchResponseToMessageSet } from "./types.ts";
+import type { Request, Response, Message, MessageSet, Batch, BatchResponse, Reference, RequestId } from "./types.ts";
+import { newRequest, isReference, toBatch, batchResponseToMessageSet } from "./types.ts";
 import { Handler } from "./handler.ts";
 import { getCodec, MimeTypeJSON, type Codec } from "./encoding.ts";
 import { RpcError } from "./error.ts";
@@ -73,7 +73,7 @@ export class Peer {
   /**
    * Call a method on the remote peer and wait for response
    */
-  async call(method: string, params?: unknown, ref?: string | LocalReference): Promise<unknown> {
+  async call(method: string, params?: unknown, ref?: string | Reference): Promise<unknown> {
     if (this.closed || this.connError) {
       throw this.connError ?? new Error("Connection closed");
     }
@@ -101,7 +101,7 @@ export class Peer {
   /**
    * Send a notification (no response expected)
    */
-  async notify(method: string, params?: unknown, ref?: string | LocalReference): Promise<void> {
+  async notify(method: string, params?: unknown, ref?: string | Reference): Promise<void> {
     if (this.closed || this.connError) {
       throw this.connError ?? new Error("Connection closed");
     }
@@ -338,7 +338,7 @@ export class Peer {
       return;
     }
 
-    if (isLocalReference(value)) {
+    if (isReference(value)) {
       this.session.addRemoteRef(value.$ref);
       return;
     }

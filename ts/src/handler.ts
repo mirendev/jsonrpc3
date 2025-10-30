@@ -3,8 +3,8 @@
  */
 
 import type { RpcObject, Session } from "./session.ts";
-import type { Request, Response, Batch, BatchResponse, LocalReference } from "./types.ts";
-import { Version30, newResponse, newErrorResponse, isLocalReference, isNotification } from "./types.ts";
+import type { Request, Response, Batch, BatchResponse, Reference } from "./types.ts";
+import { Version30, newResponse, newErrorResponse, isReference, isNotification } from "./types.ts";
 import { ProtocolHandler } from "./protocol.ts";
 import { newParams, nullParams } from "./params.ts";
 import {
@@ -166,8 +166,8 @@ export class Handler {
       throw invalidReferenceError(ref, `Referenced request failed: index ${index}`);
     }
 
-    // Result must be a LocalReference
-    if (!isLocalReference(result)) {
+    // Result must be a Reference
+    if (!isReference(result)) {
       throw referenceTypeError(ref, `Result at index ${index} is not a reference`);
     }
 
@@ -185,14 +185,14 @@ export class Handler {
       return result;
     }
 
-    // If it's already a LocalReference, return as-is
-    if (isLocalReference(result)) {
+    // If it's already a Reference, return as-is
+    if (isReference(result)) {
       return result;
     }
 
     // Check if result implements RpcObject
     if (this.isRpcObject(result)) {
-      // Register and return LocalReference
+      // Register and return Reference
       const ref = this.session.addLocalRef(result);
       return { $ref: ref };
     }

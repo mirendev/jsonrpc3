@@ -3,8 +3,8 @@
  */
 
 import type { Session } from "./session.ts";
-import type { Batch, BatchResponse, Request, Response, LocalReference } from "./types.ts";
-import { newRequest, toRequest, isLocalReference } from "./types.ts";
+import type { Batch, BatchResponse, Request, Response, Reference } from "./types.ts";
+import { newRequest, toRequest, isReference } from "./types.ts";
 import { getCodec, MimeTypeJSON } from "./encoding.ts";
 import { RpcError } from "./error.ts";
 
@@ -31,7 +31,7 @@ export class HttpClient {
   /**
    * Call a method and wait for response
    */
-  async call(method: string, params?: unknown, ref?: string | LocalReference): Promise<unknown> {
+  async call(method: string, params?: unknown, ref?: string | Reference): Promise<unknown> {
     const id = this.requestId++;
     const refString = typeof ref === "string" ? ref : ref?.$ref;
     const req = newRequest(method, params, id, refString);
@@ -82,7 +82,7 @@ export class HttpClient {
   /**
    * Send a notification (no response expected)
    */
-  async notify(method: string, params?: unknown, ref?: string | LocalReference): Promise<void> {
+  async notify(method: string, params?: unknown, ref?: string | Reference): Promise<void> {
     const refString = typeof ref === "string" ? ref : ref?.$ref;
     const req = newRequest(method, params, undefined, refString);
 
@@ -150,8 +150,8 @@ export class HttpClient {
       return;
     }
 
-    // If it's a LocalReference, track it
-    if (isLocalReference(value)) {
+    // If it's a Reference, track it
+    if (isReference(value)) {
       this.session.addRemoteRef(value.$ref);
       return;
     }

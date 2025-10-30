@@ -5,7 +5,7 @@
 import { describe, test, expect } from "bun:test";
 import { Peer } from "../src/peer.ts";
 import { MethodMap } from "../src/helpers.ts";
-import type { LocalReference } from "../src/types.ts";
+import type { Reference } from "../src/types.ts";
 
 /**
  * Create a pair of connected streams for testing
@@ -197,7 +197,7 @@ describe("Peer", () => {
 
     try {
       // Get counter reference
-      const counterRef = (await peer2.call("getCounter")) as LocalReference;
+      const counterRef = (await peer2.call("getCounter")) as Reference;
       expect(counterRef).toHaveProperty("$ref");
 
       // Call methods on the counter object
