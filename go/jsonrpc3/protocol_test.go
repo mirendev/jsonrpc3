@@ -4,6 +4,9 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewProtocolHandler(t *testing.T) {
@@ -470,4 +473,25 @@ func TestConvertRefInfo_ZeroLastAccessed(t *testing.T) {
 	if result.LastAccessed != "" {
 		t.Errorf("LastAccessed should be empty for zero time, got %v", result.LastAccessed)
 	}
+}
+
+func TestProtocolHandler_Capabilities(t *testing.T) {
+	session := NewSession()
+	mimeTypes := []string{MimeTypeJSON, MimeTypeCBOR, MimeTypeCBORCompact}
+	handler := NewProtocolHandler(session, mimeTypes)
+
+	// Call capabilities method
+	result, err := handler.CallMethod("capabilities", nil)
+	require.NoError(t, err)
+
+	capabilities, ok := result.([]string)
+	require.True(t, ok, "capabilities should return []string")
+
+	// Check for expected capabilities
+	assert.Contains(t, capabilities, "references")
+	assert.Contains(t, capabilities, "batch-local-references")
+	assert.Contains(t, capabilities, "bidirectional-calls")
+	assert.Contains(t, capabilities, "introspection")
+	assert.Contains(t, capabilities, "cbor-encoding")
+	assert.Contains(t, capabilities, "cbor-compact-encoding")
 }
