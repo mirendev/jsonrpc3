@@ -1059,7 +1059,7 @@ func (p *BidirectionalPair) ServerCallClient(ref, method string, params any, res
 	return nil
 }
 
-// trackReferences scans the result for LocalReferences and tracks them as RemoteRefs
+// trackReferences scans the result for References and tracks them as RemoteRefs
 func (p *BidirectionalPair) trackReferences(data RawMessage, receiverSession, senderSession *Session) {
 	// Parse as generic structure
 	var generic any
@@ -1070,13 +1070,13 @@ func (p *BidirectionalPair) trackReferences(data RawMessage, receiverSession, se
 	p.trackReferencesInValue(generic, receiverSession, senderSession)
 }
 
-// trackReferencesInValue recursively finds LocalReferences and tracks them
+// trackReferencesInValue recursively finds References and tracks them
 func (p *BidirectionalPair) trackReferencesInValue(value any, receiverSession, senderSession *Session) {
 	switch v := value.(type) {
 	case map[string]any:
-		// Check if this is a LocalReference
+		// Check if this is a Reference
 		if refStr, ok := v["$ref"].(string); ok && len(v) == 1 {
-			// This is a LocalReference - track it as RemoteRef in receiver session
+			// This is a Reference - track it as RemoteRef in receiver session
 			if obj := senderSession.GetLocalRef(refStr); obj != nil {
 				receiverSession.AddRemoteRef(refStr, nil)
 			}
@@ -1117,7 +1117,7 @@ func TestBidirectionalCallback(t *testing.T) {
 	serverRoot.Register("subscribe", func(params Params) (any, error) {
 		var p struct {
 			Topic    string         `json:"topic"`
-			Callback LocalReference `json:"callback"`
+			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
 			return nil, err
@@ -1185,7 +1185,7 @@ func TestBidirectionalCallbackWithObjectReturn(t *testing.T) {
 	var capturedCallbackRef string
 
 	serverRoot.Register("registerCallback", func(params Params) (any, error) {
-		var callback LocalReference
+		var callback Reference
 		if err := params.Decode(&callback); err != nil {
 			return nil, err
 		}
@@ -1202,7 +1202,7 @@ func TestBidirectionalCallbackWithObjectReturn(t *testing.T) {
 
 	// Client calls server
 	var registerResult string
-	err := pair.ClientCall("registerCallback", LocalReference{Ref: callbackRef}, &registerResult)
+	err := pair.ClientCall("registerCallback", Reference{Ref: callbackRef}, &registerResult)
 	require.NoError(t, err)
 	assert.Equal(t, "registered", registerResult)
 
@@ -1242,7 +1242,7 @@ func TestBidirectionalCallbackMultiple(t *testing.T) {
 	var callbackRef string
 
 	serverRoot.Register("registerListener", func(params Params) (any, error) {
-		var ref LocalReference
+		var ref Reference
 		params.Decode(&ref)
 		callbackRef = ref.Ref
 		return "ok", nil
@@ -1255,7 +1255,7 @@ func TestBidirectionalCallbackMultiple(t *testing.T) {
 	pair.clientSession.AddLocalRef(ref, clientRoot)
 
 	var result string
-	err := pair.ClientCall("registerListener", LocalReference{Ref: ref}, &result)
+	err := pair.ClientCall("registerListener", Reference{Ref: ref}, &result)
 	require.NoError(t, err)
 
 	pair.serverSession.AddRemoteRef(callbackRef, nil)
@@ -1290,7 +1290,7 @@ func TestBidirectionalCallbackError(t *testing.T) {
 	var callbackRef string
 
 	serverRoot.Register("register", func(params Params) (any, error) {
-		var ref LocalReference
+		var ref Reference
 		params.Decode(&ref)
 		callbackRef = ref.Ref
 		return "ok", nil
@@ -1302,7 +1302,7 @@ func TestBidirectionalCallbackError(t *testing.T) {
 	pair.clientSession.AddLocalRef(ref, clientRoot)
 
 	var result string
-	err := pair.ClientCall("register", LocalReference{Ref: ref}, &result)
+	err := pair.ClientCall("register", Reference{Ref: ref}, &result)
 	require.NoError(t, err)
 
 	pair.serverSession.AddRemoteRef(callbackRef, nil)

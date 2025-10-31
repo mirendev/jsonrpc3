@@ -59,14 +59,14 @@ func TestProcessResult_Object(t *testing.T) {
 	counter := &TestCounter{Value: 10}
 	processed := processResult(h, counter)
 
-	// Should be replaced with LocalReference
-	ref, ok := processed.(LocalReference)
+	// Should be replaced with Reference
+	ref, ok := processed.(Reference)
 	if !ok {
-		t.Fatalf("expected LocalReference, got %T", processed)
+		t.Fatalf("expected Reference, got %T", processed)
 	}
 
 	if ref.Ref == "" {
-		t.Error("LocalReference should have non-empty Ref")
+		t.Error("Reference should have non-empty Ref")
 	}
 
 	// Verify it was registered in session
@@ -106,10 +106,10 @@ func TestProcessResult_SliceWithObject(t *testing.T) {
 		t.Errorf("element 0: got %v, want hello", processedSlice[0])
 	}
 
-	// Second element should be LocalReference
-	ref1, ok := processedSlice[1].(LocalReference)
+	// Second element should be Reference
+	ref1, ok := processedSlice[1].(Reference)
 	if !ok {
-		t.Errorf("element 1 should be LocalReference, got %T", processedSlice[1])
+		t.Errorf("element 1 should be Reference, got %T", processedSlice[1])
 	} else if h.session.GetLocalRef(ref1.Ref) == nil {
 		t.Error("counter1 should be registered")
 	}
@@ -119,10 +119,10 @@ func TestProcessResult_SliceWithObject(t *testing.T) {
 		t.Errorf("element 2: got %v, want 42", processedSlice[2])
 	}
 
-	// Fourth element should be LocalReference
-	ref2, ok := processedSlice[3].(LocalReference)
+	// Fourth element should be Reference
+	ref2, ok := processedSlice[3].(Reference)
 	if !ok {
-		t.Errorf("element 3 should be LocalReference, got %T", processedSlice[3])
+		t.Errorf("element 3 should be Reference, got %T", processedSlice[3])
 	} else if h.session.GetLocalRef(ref2.Ref) == nil {
 		t.Error("counter2 should be registered")
 	}
@@ -158,10 +158,10 @@ func TestProcessResult_MapWithObject(t *testing.T) {
 		t.Errorf("name: got %v, want test", processedMap["name"])
 	}
 
-	// Check counter field - should be LocalReference
-	ref, ok := processedMap["counter"].(LocalReference)
+	// Check counter field - should be Reference
+	ref, ok := processedMap["counter"].(Reference)
 	if !ok {
-		t.Errorf("counter should be LocalReference, got %T", processedMap["counter"])
+		t.Errorf("counter should be Reference, got %T", processedMap["counter"])
 	} else if h.session.GetLocalRef(ref.Ref) == nil {
 		t.Error("counter should be registered in session")
 	}
@@ -200,14 +200,14 @@ func TestProcessResult_NestedStructures(t *testing.T) {
 		t.Fatalf("counters should be []any, got %T", processedMap["counters"])
 	}
 
-	ref1, ok := counters[0].(LocalReference)
+	ref1, ok := counters[0].(Reference)
 	if !ok {
-		t.Errorf("counters[0] should be LocalReference, got %T", counters[0])
+		t.Errorf("counters[0] should be Reference, got %T", counters[0])
 	}
 
-	ref2, ok := counters[1].(LocalReference)
+	ref2, ok := counters[1].(Reference)
 	if !ok {
-		t.Errorf("counters[1] should be LocalReference, got %T", counters[1])
+		t.Errorf("counters[1] should be Reference, got %T", counters[1])
 	}
 
 	// Check nested map
@@ -216,9 +216,9 @@ func TestProcessResult_NestedStructures(t *testing.T) {
 		t.Fatalf("data should be map[string]any, got %T", processedMap["data"])
 	}
 
-	_, ok = data["primary"].(LocalReference)
+	_, ok = data["primary"].(Reference)
 	if !ok {
-		t.Errorf("data.primary should be LocalReference, got %T", data["primary"])
+		t.Errorf("data.primary should be Reference, got %T", data["primary"])
 	}
 
 	// Note: Currently, the same object appearing in different places
@@ -234,13 +234,13 @@ func TestProcessResult_NestedStructures(t *testing.T) {
 	}
 }
 
-func TestProcessResult_ExistingLocalReference(t *testing.T) {
+func TestProcessResult_ExistingReference(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
 	h := NewHandler(s, root, nil)
 
-	// Create an existing LocalReference
-	existingRef := NewLocalReference("existing-ref")
+	// Create an existing Reference
+	existingRef := NewReference("existing-ref")
 
 	result := map[string]any{
 		"ref": existingRef,
@@ -253,10 +253,10 @@ func TestProcessResult_ExistingLocalReference(t *testing.T) {
 		t.Fatalf("expected map[string]any, got %T", processed)
 	}
 
-	// LocalReference should pass through unchanged
-	ref, ok := processedMap["ref"].(LocalReference)
+	// Reference should pass through unchanged
+	ref, ok := processedMap["ref"].(Reference)
 	if !ok {
-		t.Errorf("ref should be LocalReference, got %T", processedMap["ref"])
+		t.Errorf("ref should be Reference, got %T", processedMap["ref"])
 	}
 
 	if ref.Ref != "existing-ref" {
@@ -286,8 +286,8 @@ func TestHandler_ObjectIntegration(t *testing.T) {
 		t.Fatalf("unexpected error: %v", resp.Error)
 	}
 
-	// Result should be a LocalReference
-	var ref LocalReference
+	// Result should be a Reference
+	var ref Reference
 	if err := json.Unmarshal(resp.Result, &ref); err != nil {
 		t.Fatalf("failed to unmarshal result: %v", err)
 	}
@@ -339,7 +339,7 @@ func TestHandler_ObjectReturningObject(t *testing.T) {
 		t.Fatalf("unexpected error: %v", resp.Error)
 	}
 
-	var result map[string]LocalReference
+	var result map[string]Reference
 	if err := json.Unmarshal(resp.Result, &result); err != nil {
 		t.Fatalf("failed to unmarshal result: %v", err)
 	}

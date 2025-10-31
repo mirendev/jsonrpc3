@@ -346,7 +346,7 @@ func TestHTTPIntegration_SessionObjectReferences(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create a counter - returns a local reference
-	var localRef LocalReference
+	var localRef Reference
 	err := client.Call("createCounter", nil, &localRef)
 	require.NoError(t, err)
 	assert.NotEmpty(t, localRef.Ref)

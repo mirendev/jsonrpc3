@@ -6,7 +6,7 @@ import (
 )
 
 // processResult walks through a result value using reflection and:
-// 1. Finds Object implementations and registers them, replacing with LocalReference
+// 1. Finds Object implementations and registers them, replacing with Reference
 // 2. Processes nested structures (maps, slices, structs)
 // Returns the processed result ready for JSON marshaling.
 func processResult(handler *Handler, result any) any {
@@ -33,11 +33,11 @@ func walkValue(handler *Handler, v reflect.Value) reflect.Value {
 			// Generate ref ID and register the object with handler
 			ref := handler.session.GenerateRefID()
 			handler.session.AddLocalRef(ref, obj)
-			return reflect.ValueOf(NewLocalReference(ref))
+			return reflect.ValueOf(NewReference(ref))
 		}
 
-		// Check if it's already a LocalReference - leave it as-is
-		if _, ok := iface.(LocalReference); ok {
+		// Check if it's already a Reference - leave it as-is
+		if _, ok := iface.(Reference); ok {
 			return v
 		}
 

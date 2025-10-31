@@ -226,7 +226,7 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 
 	root := NewMethodMap()
 	root.Register("getCounter", func(params Params) (any, error) {
-		return NewLocalReference("counter-1"), nil
+		return NewReference("counter-1"), nil
 	})
 
 	// Create handler that registers objects
@@ -261,7 +261,7 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 	defer client.Close()
 
 	// Get counter reference
-	var ref LocalReference
+	var ref Reference
 	err = client.Call("getCounter", nil, &ref)
 	require.NoError(t, err)
 	assert.Equal(t, "counter-1", ref.Ref)
@@ -426,7 +426,7 @@ func TestWebSocket_SessionManagement(t *testing.T) {
 	defer client.Close()
 
 	// Create counter (returns reference)
-	var ref LocalReference
+	var ref Reference
 	err = client.Call("createCounter", nil, &ref)
 	require.NoError(t, err)
 

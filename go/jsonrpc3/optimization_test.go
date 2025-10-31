@@ -224,7 +224,7 @@ func TestHTTPClient_DeleteSession(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create a stateful session (with object reference)
-	var localRef LocalReference
+	var localRef Reference
 	err := client.Call("createCounter", nil, &localRef)
 	assert.NoError(t, err, "Should create counter")
 

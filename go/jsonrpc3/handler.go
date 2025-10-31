@@ -223,7 +223,7 @@ func resolveBatchLocalRef(ref string, currentIndex int, responses []Response) (s
 		return "", fmt.Errorf("result from request \\%d is not a reference", index)
 	}
 
-	// Check if result is a LocalReference
+	// Check if result is a Reference
 	if refStr, ok := result["$ref"].(string); ok {
 		return refStr, nil
 	}

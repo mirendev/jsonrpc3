@@ -24,7 +24,7 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 	serverRoot.Register("subscribe", func(params Params) (any, error) {
 		var p struct {
 			Topic    string         `json:"topic"`
-			Callback LocalReference `json:"callback"`
+			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -116,7 +116,7 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 	var result map[string]any
 	err = client.Call("subscribe", map[string]any{
 		"topic":    "news",
-		"callback": NewLocalReference("my-callback"),
+		"callback": NewReference("my-callback"),
 	}, &result)
 	require.NoError(t, err)
 	assert.Equal(t, "subscribed", result["status"])
@@ -286,7 +286,7 @@ func TestWebSocketIntegration_ObjectLifecycle(t *testing.T) {
 	defer client.Close()
 
 	// Create object
-	var ref LocalReference
+	var ref Reference
 	err = client.Call("createObject", nil, &ref)
 	require.NoError(t, err)
 	assert.NotEmpty(t, ref.Ref)
@@ -331,7 +331,7 @@ func TestWebSocketIntegration_ProtocolMethods(t *testing.T) {
 	defer client.Close()
 
 	// Create object
-	var ref LocalReference
+	var ref Reference
 	err = client.Call("createObject", nil, &ref)
 	require.NoError(t, err)
 

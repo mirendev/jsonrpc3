@@ -98,7 +98,7 @@ func TestWebTransportIntegration_BidirectionalCallbacks(t *testing.T) {
 	serverRoot.Register("subscribe", func(params Params) (any, error) {
 		var p struct {
 			Topic    string         `json:"topic"`
-			Callback LocalReference `json:"callback"`
+			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -174,7 +174,7 @@ func TestWebTransportIntegration_BidirectionalCallbacks(t *testing.T) {
 	var result map[string]any
 	err = client.Call("subscribe", map[string]any{
 		"topic":    "news",
-		"callback": NewLocalReference("my-callback"),
+		"callback": NewReference("my-callback"),
 	}, &result)
 	require.NoError(t, err)
 	assert.Equal(t, "subscribed", result["status"])

@@ -132,7 +132,7 @@ func (c *HTTPClient) GetSession() *Session {
 //	callback := &MyCallback{}
 //	client.RegisterCallback("client-callback-1", callback)
 //	client.Call("subscribe", map[string]any{
-//	    "callback": LocalReference{Ref: "client-callback-1"},
+//	    "callback": Reference{Ref: "client-callback-1"},
 //	}, &result)
 func (c *HTTPClient) RegisterCallback(ref string, obj Object) {
 	session := c.GetSession()

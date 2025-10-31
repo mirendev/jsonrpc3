@@ -312,20 +312,20 @@ func TestErrorConstructors(t *testing.T) {
 	}
 }
 
-func TestLocalReference_Marshaling(t *testing.T) {
+func TestReference_Marshaling(t *testing.T) {
 	tests := []struct {
 		name string
-		ref  LocalReference
+		ref  Reference
 		want string
 	}{
 		{
 			name: "simple reference",
-			ref:  LocalReference{Ref: "obj-1"},
+			ref:  Reference{Ref: "obj-1"},
 			want: `{"$ref":"obj-1"}`,
 		},
 		{
 			name: "uuid reference",
-			ref:  LocalReference{Ref: "550e8400-e29b-41d4-a716-446655440000"},
+			ref:  Reference{Ref: "550e8400-e29b-41d4-a716-446655440000"},
 			want: `{"$ref":"550e8400-e29b-41d4-a716-446655440000"}`,
 		},
 	}
@@ -343,22 +343,22 @@ func TestLocalReference_Marshaling(t *testing.T) {
 	}
 }
 
-func TestLocalReference_Unmarshaling(t *testing.T) {
+func TestReference_Unmarshaling(t *testing.T) {
 	tests := []struct {
 		name  string
 		input string
-		want  LocalReference
+		want  Reference
 	}{
 		{
 			name:  "simple reference",
 			input: `{"$ref":"obj-1"}`,
-			want:  LocalReference{Ref: "obj-1"},
+			want:  Reference{Ref: "obj-1"},
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			var got LocalReference
+			var got Reference
 			err := json.Unmarshal([]byte(tt.input), &got)
 			if err != nil {
 				t.Fatalf("Unmarshal() error = %v", err)

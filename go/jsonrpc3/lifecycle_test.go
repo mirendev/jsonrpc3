@@ -260,12 +260,12 @@ func TestLifecycle_FullIntegration(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create disposable object
-	var ref1 LocalReference
+	var ref1 Reference
 	err := client.Call("createDisposable", nil, &ref1)
 	assert.NoError(t, err)
 
 	// Create closeable object
-	var ref2 LocalReference
+	var ref2 Reference
 	err = client.Call("createCloseable", nil, &ref2)
 	assert.NoError(t, err)
 

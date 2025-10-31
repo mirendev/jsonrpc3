@@ -73,14 +73,14 @@ func (c *IntegrationCounter) CallMethod(method string, params Params) (any, erro
 	}
 }
 
-// TestIntegration_LocalReferences tests creating and using local references.
-func TestIntegration_LocalReferences(t *testing.T) {
+// TestIntegration_References tests creating and using local references.
+func TestIntegration_References(t *testing.T) {
 	session := NewSession()
 	root := NewMethodMap()
 	handler := NewHandler(session, root, nil)
 
 	// Register a method that returns an Object
-	// It will be automatically registered and returned as a LocalReference
+	// It will be automatically registered and returned as a Reference
 	root.Register("create_counter", func(params Params) (any, error) {
 		return &IntegrationCounter{Value: 0}, nil
 	})
@@ -90,7 +90,7 @@ func TestIntegration_LocalReferences(t *testing.T) {
 	resp1 := handler.HandleRequest(req1)
 	require.Nil(t, resp1.Error, "create_counter should not error")
 
-	var localRef LocalReference
+	var localRef Reference
 	require.NoError(t, json.Unmarshal(resp1.Result, &localRef), "should unmarshal reference")
 
 	// Increment counter using the reference
@@ -357,7 +357,7 @@ func TestIntegration_ComplexReferenceScenario(t *testing.T) {
 	resp1 := handler.HandleRequest(req1)
 	require.Nil(t, resp1.Error, "create_database should not error")
 
-	var dbRef LocalReference
+	var dbRef Reference
 	require.NoError(t, json.Unmarshal(resp1.Result, &dbRef), "should unmarshal db reference")
 
 	// Create table

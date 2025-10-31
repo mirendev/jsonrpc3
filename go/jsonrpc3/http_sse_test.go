@@ -40,7 +40,7 @@ func TestHTTPSSE_BasicCallback(t *testing.T) {
 	root.Register("subscribe", func(params Params) (any, error) {
 		var p struct {
 			Topic    string         `json:"topic"`
-			Callback LocalReference `json:"callback"`
+			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -70,7 +70,7 @@ func TestHTTPSSE_BasicCallback(t *testing.T) {
 	var result map[string]any
 	err := client.Call("subscribe", map[string]any{
 		"topic":    "updates",
-		"callback": LocalReference{Ref: "client-callback-1"},
+		"callback": Reference{Ref: "client-callback-1"},
 	}, &result)
 
 	require.NoError(t, err)
@@ -127,8 +127,8 @@ func TestHTTPSSE_MultipleCallbacks(t *testing.T) {
 
 	root.Register("setup", func(params Params) (any, error) {
 		var p struct {
-			OnEvent LocalReference `json:"onEvent"`
-			OnError LocalReference `json:"onError"`
+			OnEvent Reference `json:"onEvent"`
+			OnError Reference `json:"onError"`
 		}
 		if err := params.Decode(&p); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -153,8 +153,8 @@ func TestHTTPSSE_MultipleCallbacks(t *testing.T) {
 
 	var result string
 	err := client.Call("setup", map[string]any{
-		"onEvent": LocalReference{Ref: "event-cb"},
-		"onError": LocalReference{Ref: "error-cb"},
+		"onEvent": Reference{Ref: "event-cb"},
+		"onError": Reference{Ref: "error-cb"},
 	}, &result)
 
 	require.NoError(t, err)
@@ -189,7 +189,7 @@ func TestHTTPSSE_SessionPersistence(t *testing.T) {
 
 	root.Register("register", func(params Params) (any, error) {
 		var p struct {
-			Callback LocalReference `json:"callback"`
+			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -212,7 +212,7 @@ func TestHTTPSSE_SessionPersistence(t *testing.T) {
 	// First call with callback in params object
 	var result string
 	err := client.Call("register", map[string]any{
-		"callback": LocalReference{Ref: "persist-cb"},
+		"callback": Reference{Ref: "persist-cb"},
 	}, &result)
 	require.NoError(t, err)
 	assert.Equal(t, "registered", result)
@@ -223,7 +223,7 @@ func TestHTTPSSE_SessionPersistence(t *testing.T) {
 
 	// Second call should use same session
 	err = client.Call("register", map[string]any{
-		"callback": LocalReference{Ref: "persist-cb"},
+		"callback": Reference{Ref: "persist-cb"},
 	}, &result)
 	require.NoError(t, err)
 
@@ -240,7 +240,7 @@ func TestHTTPSSE_Format(t *testing.T) {
 			root := NewMethodMap()
 
 			root.Register("subscribe", func(params Params) (any, error) {
-				var callback LocalReference
+				var callback Reference
 				if err := params.Decode(&callback); err != nil {
 					return nil, NewInvalidParamsError(err.Error())
 				}
@@ -260,7 +260,7 @@ func TestHTTPSSE_Format(t *testing.T) {
 			client.RegisterCallback("format-cb", callback)
 
 			var result string
-			err := client.Call("subscribe", LocalReference{Ref: "format-cb"}, &result)
+			err := client.Call("subscribe", Reference{Ref: "format-cb"}, &result)
 			require.NoError(t, err)
 			assert.Equal(t, "subscribed", result)
 		})
@@ -272,7 +272,7 @@ func TestHTTPSSE_ErrorHandling(t *testing.T) {
 	root := NewMethodMap()
 
 	root.Register("failWithCallback", func(params Params) (any, error) {
-		var callback LocalReference
+		var callback Reference
 		params.Decode(&callback)
 		return nil, &Error{
 			Code:    -32000,
@@ -292,7 +292,7 @@ func TestHTTPSSE_ErrorHandling(t *testing.T) {
 	client.RegisterCallback("error-cb", callback)
 
 	var result string
-	err := client.Call("failWithCallback", LocalReference{Ref: "error-cb"}, &result)
+	err := client.Call("failWithCallback", Reference{Ref: "error-cb"}, &result)
 
 	// Should receive error
 	require.Error(t, err)

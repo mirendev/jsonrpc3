@@ -336,15 +336,15 @@ func NewReferenceTypeError(data any) *Error {
 	return &Error{Code: CodeReferenceTypeError, Message: "Reference type error", Data: data}
 }
 
-// LocalReference represents a reference to a local object using {"$ref": "id"} format.
+// Reference represents a reference to a local object using {"$ref": "id"} format.
 // This is used when passing references in params or returning them in results.
-type LocalReference struct {
+type Reference struct {
 	Ref string `json:"$ref"`
 }
 
-// NewLocalReference creates a new local reference.
-func NewLocalReference(ref string) LocalReference {
-	return LocalReference{Ref: ref}
+// NewReference creates a new local reference.
+func NewReference(ref string) Reference {
+	return Reference{Ref: ref}
 }
 
 // Params provides access to method parameters in a transport-agnostic way.

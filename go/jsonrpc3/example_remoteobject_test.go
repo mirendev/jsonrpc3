@@ -51,8 +51,8 @@ func Example_remoteObject() {
 	req1, _ := jsonrpc3.NewRequest("create_counter", "MyCounter", 1)
 	resp1 := handler.HandleRequest(req1)
 
-	// The result is a LocalReference
-	var counterRef jsonrpc3.LocalReference
+	// The result is a Reference
+	var counterRef jsonrpc3.Reference
 	json.Unmarshal(resp1.Result, &counterRef)
 	fmt.Printf("Got reference: %s\n", counterRef.Ref)
 
@@ -126,10 +126,10 @@ func Example_remoteObjectComplex() {
 	req1, _ := jsonrpc3.NewRequest("connect_db", "mydb", 1)
 	resp1 := handler.HandleRequest(req1)
 
-	// Parse the result - db field will be a LocalReference
+	// Parse the result - db field will be a Reference
 	var result struct {
 		Status string                   `json:"status"`
-		DB     jsonrpc3.LocalReference `json:"db"`
+		DB     jsonrpc3.Reference `json:"db"`
 	}
 	json.Unmarshal(resp1.Result, &result)
 
@@ -184,7 +184,7 @@ func Example_remoteObjectMultiple() {
 	resp1 := handler.HandleRequest(req1)
 
 	// All counters are automatically registered and returned as references
-	var refs []jsonrpc3.LocalReference
+	var refs []jsonrpc3.Reference
 	json.Unmarshal(resp1.Result, &refs)
 
 	fmt.Printf("Created %d counters\n", len(refs))

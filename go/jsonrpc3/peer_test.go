@@ -229,7 +229,7 @@ func TestPeer_ObjectRegistration(t *testing.T) {
 
 	serverRoot := NewMethodMap()
 	serverRoot.Register("getCounter", func(params Params) (any, error) {
-		return NewLocalReference("counter-1"), nil
+		return NewReference("counter-1"), nil
 	})
 
 	peer1, err := NewPeer(r1, w2, serverRoot)
@@ -244,7 +244,7 @@ func TestPeer_ObjectRegistration(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Get counter reference
-	var counterRef LocalReference
+	var counterRef Reference
 	err = peer2.Call("getCounter", nil, &counterRef)
 	require.NoError(t, err)
 

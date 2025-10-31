@@ -356,7 +356,7 @@ func (h *HTTPHandler) cleanupExpiredSessions() {
 	}
 }
 
-// scanForClientRefs recursively scans params for LocalReference structures.
+// scanForClientRefs recursively scans params for Reference structures.
 // Returns true if any client references are found ({"$ref": "..."}).
 func scanForClientRefs(params RawMessage) bool {
 	if len(params) == 0 {
@@ -372,11 +372,11 @@ func scanForClientRefs(params RawMessage) bool {
 	return hasClientRefsInValue(data)
 }
 
-// hasClientRefsInValue recursively checks if a value contains LocalReference structures.
+// hasClientRefsInValue recursively checks if a value contains Reference structures.
 func hasClientRefsInValue(value any) bool {
 	switch v := value.(type) {
 	case map[string]any:
-		// Check if this is a LocalReference
+		// Check if this is a Reference
 		if refStr, ok := v["$ref"].(string); ok && refStr != "" && len(v) == 1 {
 			return true
 		}
