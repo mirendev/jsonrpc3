@@ -101,6 +101,11 @@ module JSONRPC3
 
       response = http.request(request)
 
+      # 204 No Content is valid for notifications (batch of all notifications)
+      if response.code.to_i == 204
+        return MessageSet.new(messages: [], is_batch: msg_set.is_batch)
+      end
+
       raise "HTTP error: #{response.code}" unless response.code.to_i == 200
 
       @codec.unmarshal_messages(response.body)

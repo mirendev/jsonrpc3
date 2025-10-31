@@ -179,6 +179,12 @@ class HttpClient:
 
             # Get response
             response = conn.getresponse()
+
+            # 204 No Content is valid for notifications (batch of all notifications)
+            if response.status == 204:
+                response.read()  # Consume response body
+                return MessageSet(messages=[], is_batch=msg_set.is_batch)
+
             if response.status != 200:
                 raise RuntimeError(f"HTTP error: {response.status}")
 
