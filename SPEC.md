@@ -1313,7 +1313,7 @@ Objects MAY implement a `$methods` method that returns a list of method names th
 
 **Implementation Notes:**
 - The `$methods` method itself SHOULD be included in the returned list
-- If the object also implements `$type`, it SHOULD be included in the list
+- If the object also implements `$type` and/or `$method`, they SHOULD be included in the list
 - Implementations MAY choose to exclude internal or private methods from the list
 - The absence of `$methods` support means the object does not provide this introspection capability
 
@@ -1369,9 +1369,95 @@ Objects MAY implement a `$type` method that returns a string describing the obje
 - Type strings are purely informational and do not imply any behavioral contract
 - The absence of `$type` support means the object does not provide type information
 
-#### 3.5.3. Introspection and Capabilities
+#### 3.5.3. The `$method` Method
 
-If an implementation supports introspection methods (`$methods` and/or `$type`), it SHOULD advertise the `"introspection"` capability in its `capabilities` method response (see section 3.4.2.7).
+Objects MAY implement a `$method` method that returns detailed information about a specific method.
+
+**Parameters:** A string containing the method name to introspect
+
+**Returns:** An object describing the method, or `null` if the method does not exist or does not provide introspection information.
+
+**Result Object Format:**
+```json
+{
+  "name": "method-name",
+  "description": "Human-readable description of what the method does",
+  "params": {
+    "param1": "type-description",
+    "param2": "type-description"
+  }
+}
+```
+
+The `params` field MAY alternatively be an array for positional parameters:
+```json
+{
+  "name": "method-name",
+  "description": "Human-readable description",
+  "params": ["type1", "type2", "type3"]
+}
+```
+
+**Example Request:**
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "calculator-1",
+  "method": "$method",
+  "params": "add",
+  "id": 1
+}
+```
+
+**Response:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "name": "add",
+    "description": "Adds two numbers and returns the sum",
+    "params": {
+      "a": "number",
+      "b": "number"
+    }
+  },
+  "id": 1
+}
+```
+
+**Example with Array Parameters:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "name": "multiply",
+    "description": "Multiplies all provided numbers",
+    "params": ["number", "number", "...number"]
+  },
+  "id": 1
+}
+```
+
+**Example with Non-Existent Method:**
+```json
+{
+  "jsonrpc": "3.0",
+  "result": null,
+  "id": 1
+}
+```
+
+**Implementation Notes:**
+- The `description` field is optional and provides human-readable documentation
+- The `params` field describes parameter types and can be either an object (for named parameters) or an array (for positional parameters)
+- Parameter type descriptions are implementation-defined strings (e.g., "number", "string", "array", "Customer", etc.)
+- Implementations MAY include additional fields such as `returns`, `throws`, `deprecated`, etc.
+- If a method exists but the implementation chooses not to provide introspection information for it, the result MAY be `null` or an object with minimal information
+- The absence of `$method` support means the object does not provide detailed method introspection
+
+#### 3.5.4. Introspection and Capabilities
+
+If an implementation supports introspection methods (`$methods`, `$type`, and/or `$method`), it SHOULD advertise the `"introspection"` capability in its `capabilities` method response (see section 3.4.2.7).
 
 Objects are not required to support introspection even if the implementation advertises the capability—the capability indicates that some objects in the system support introspection, not that all objects do.
 
