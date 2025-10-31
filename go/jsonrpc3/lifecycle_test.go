@@ -274,7 +274,7 @@ func TestLifecycle_FullIntegration(t *testing.T) {
 
 	// Verify objects work
 	var result int
-	err = client.CallRef(ref1.Ref, "increment", nil, &result)
+	err = client.Call("increment", nil, &result, ToRef(ref1))
 	assert.NoError(t, err)
 	assert.Equal(t, 1, result)
 

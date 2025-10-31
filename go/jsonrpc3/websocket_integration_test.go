@@ -23,7 +23,7 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 	serverRoot := NewMethodMap()
 	serverRoot.Register("subscribe", func(params Params) (any, error) {
 		var p struct {
-			Topic    string         `json:"topic"`
+			Topic    string    `json:"topic"`
 			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
@@ -294,7 +294,7 @@ func TestWebSocketIntegration_ObjectLifecycle(t *testing.T) {
 
 	// Use object
 	var value string
-	err = client.CallRef(ref.Ref, "getValue", nil, &value)
+	err = client.Call("getValue", nil, &value, ToRef(ref))
 	require.NoError(t, err)
 	assert.Equal(t, "object value", value)
 
@@ -337,20 +337,20 @@ func TestWebSocketIntegration_ProtocolMethods(t *testing.T) {
 
 	// Get session ID via protocol method
 	var sessionResult SessionIDResult
-	err = client.CallRef("$rpc", "session_id", nil, &sessionResult)
+	err = client.Call("session_id", nil, &sessionResult, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult.SessionID)
 
 	// List refs via protocol method
 	var refs []RefInfoResult
-	err = client.CallRef("$rpc", "list_refs", nil, &refs)
+	err = client.Call("list_refs", nil, &refs, ToRef(Protocol))
 	require.NoError(t, err)
 	// Client shouldn't see its own remote refs in list_refs
 	// list_refs returns local refs, which for client are objects it exposes
 
 	// Get mimetypes
 	var mimeResult MimeTypesResult
-	err = client.CallRef("$rpc", "mimetypes", nil, &mimeResult)
+	err = client.Call("mimetypes", nil, &mimeResult, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.Contains(t, mimeResult.MimeTypes, "application/json")
 }

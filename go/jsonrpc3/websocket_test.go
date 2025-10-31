@@ -268,17 +268,17 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 
 	// Call increment on ref
 	var count int
-	err = client.CallRef(ref.Ref, "increment", nil, &count)
+	err = client.Call("increment", nil, &count, ToRef(ref))
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
 	// Call increment again
-	err = client.CallRef(ref.Ref, "increment", nil, &count)
+	err = client.Call("increment", nil, &count, ToRef(ref))
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 
 	// Get count
-	err = client.CallRef(ref.Ref, "getCount", nil, &count)
+	err = client.Call("getCount", nil, &count, ToRef(ref))
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }

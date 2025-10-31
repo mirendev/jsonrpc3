@@ -105,20 +105,20 @@ func TestHTTPIntegration_ProtocolMethods(t *testing.T) {
 
 	// Get session ID - first request creates a session
 	var sessionResult1 SessionIDResult
-	err := client.CallRef("$rpc", "session_id", nil, &sessionResult1)
+	err := client.Call("session_id", nil, &sessionResult1, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult1.SessionID)
 
 	// Get session ID again - should be the same (session persists)
 	var sessionResult2 SessionIDResult
-	err = client.CallRef("$rpc", "session_id", nil, &sessionResult2)
+	err = client.Call("session_id", nil, &sessionResult2, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult2.SessionID)
 	assert.Equal(t, sessionResult1.SessionID, sessionResult2.SessionID, "Session should persist across requests")
 
 	// Get mime types - should support all 3 formats
 	var mimeResult MimeTypesResult
-	err = client.CallRef("$rpc", "mimetypes", nil, &mimeResult)
+	err = client.Call("mimetypes", nil, &mimeResult, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.Len(t, mimeResult.MimeTypes, 3)
 	assert.Contains(t, mimeResult.MimeTypes, "application/json")
@@ -313,7 +313,7 @@ func TestHTTPIntegration_SessionPersistence(t *testing.T) {
 	// First request - should get a session ID
 	assert.Empty(t, client.SessionID())
 	var sessionResult1 SessionIDResult
-	err := client.CallRef("$rpc", "session_id", nil, &sessionResult1)
+	err := client.Call("session_id", nil, &sessionResult1, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult1.SessionID)
 
@@ -324,7 +324,7 @@ func TestHTTPIntegration_SessionPersistence(t *testing.T) {
 
 	// Second request - should reuse the same session
 	var sessionResult2 SessionIDResult
-	err = client.CallRef("$rpc", "session_id", nil, &sessionResult2)
+	err = client.Call("session_id", nil, &sessionResult2, ToRef(Protocol))
 	require.NoError(t, err)
 	assert.Equal(t, sessionResult1.SessionID, sessionResult2.SessionID, "Session should persist across requests")
 	assert.Equal(t, clientSessionID, client.SessionID(), "Client session ID should not change")
@@ -355,18 +355,18 @@ func TestHTTPIntegration_SessionObjectReferences(t *testing.T) {
 
 	// Call increment on the reference - should work because session persists
 	var incResult int
-	err = client.CallRef(localRef.Ref, "increment", nil, &incResult)
+	err = client.Call("increment", nil, &incResult, ToRef(localRef))
 	require.NoError(t, err)
 	assert.Equal(t, 1, incResult)
 
 	// Call increment again - should maintain state
-	err = client.CallRef(localRef.Ref, "increment", nil, &incResult)
+	err = client.Call("increment", nil, &incResult, ToRef(localRef))
 	require.NoError(t, err)
 	assert.Equal(t, 2, incResult)
 
 	// Get value
 	var getResult int
-	err = client.CallRef(localRef.Ref, "getValue", nil, &getResult)
+	err = client.Call("getValue", nil, &getResult, ToRef(localRef))
 	require.NoError(t, err)
 	assert.Equal(t, 2, getResult)
 }
@@ -386,10 +386,10 @@ func TestHTTPIntegration_MultipleClients(t *testing.T) {
 
 	// Get session IDs for both clients
 	var session1, session2 SessionIDResult
-	err := client1.CallRef("$rpc", "session_id", nil, &session1)
+	err := client1.Call("session_id", nil, &session1, ToRef(Protocol))
 	require.NoError(t, err)
 
-	err = client2.CallRef("$rpc", "session_id", nil, &session2)
+	err = client2.Call("session_id", nil, &session2, ToRef(Protocol))
 	require.NoError(t, err)
 
 	// Should have different session IDs
@@ -411,7 +411,7 @@ func TestHTTPIntegration_SessionReset(t *testing.T) {
 
 	// Get initial session ID
 	var session1 SessionIDResult
-	err := client.CallRef("$rpc", "session_id", nil, &session1)
+	err := client.Call("session_id", nil, &session1, ToRef(Protocol))
 	require.NoError(t, err)
 	firstSessionID := client.SessionID()
 	assert.Equal(t, session1.SessionID, firstSessionID)
@@ -422,7 +422,7 @@ func TestHTTPIntegration_SessionReset(t *testing.T) {
 
 	// Next request should get a new session
 	var session2 SessionIDResult
-	err = client.CallRef("$rpc", "session_id", nil, &session2)
+	err = client.Call("session_id", nil, &session2, ToRef(Protocol))
 	require.NoError(t, err)
 	secondSessionID := client.SessionID()
 

@@ -357,6 +357,11 @@ func NewReference(ref string) Reference {
 	return Reference{Ref: ref}
 }
 
+// Protocol is the special reference used for protocol introspection methods.
+// Use this with ToRef() to call protocol methods like session_id, list_refs, etc.
+// Example: caller.Call("session_id", nil, &result, ToRef(Protocol))
+var Protocol = NewReference("$rpc")
+
 // Params provides access to method parameters in a transport-agnostic way.
 type Params interface {
 	// Decode unmarshals the parameters into the provided value.

@@ -250,15 +250,15 @@ func TestPeer_ObjectRegistration(t *testing.T) {
 
 	// Call methods on the counter object
 	var result int
-	err = peer2.CallRef(counterRef.Ref, "increment", nil, &result)
+	err = peer2.Call("increment", nil, &result, ToRef(counterRef))
 	require.NoError(t, err)
 	assert.Equal(t, 1, result)
 
-	err = peer2.CallRef(counterRef.Ref, "increment", nil, &result)
+	err = peer2.Call("increment", nil, &result, ToRef(counterRef))
 	require.NoError(t, err)
 	assert.Equal(t, 2, result)
 
-	err = peer2.CallRef(counterRef.Ref, "getCount", nil, &result)
+	err = peer2.Call("getCount", nil, &result, ToRef(counterRef))
 	require.NoError(t, err)
 	assert.Equal(t, 2, result)
 }

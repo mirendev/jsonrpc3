@@ -121,15 +121,17 @@ func Stdio(rootObject Object, opts ...ClientOption) (*Peer, error) {
 }
 
 // Call invokes a method on the remote peer and waits for the response.
-func (p *Peer) Call(method string, params any, result any) error {
-	return p.CallRef("", method, params, result)
-}
-
-// CallRef invokes a method on a remote reference and waits for the response.
-func (p *Peer) CallRef(ref string, method string, params any, result any) error {
+// Use the ToRef option to call a method on a remote object reference.
+func (p *Peer) Call(method string, params any, result any, opts ...CallOption) error {
 	// Check if connection is closed
 	if err := p.getError(); err != nil {
 		return err
+	}
+
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
 	}
 
 	// Generate request ID
@@ -142,8 +144,8 @@ func (p *Peer) CallRef(ref string, method string, params any, result any) error 
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if ref != "" {
-		req.Ref = ref
+	if options.ref != nil {
+		req.Ref = options.ref.Ref
 	}
 
 	// Create response channel
@@ -187,15 +189,17 @@ func (p *Peer) CallRef(ref string, method string, params any, result any) error 
 }
 
 // Notify sends a notification (no response expected).
-func (p *Peer) Notify(method string, params any) error {
-	return p.NotifyRef("", method, params)
-}
-
-// NotifyRef sends a notification to a remote reference.
-func (p *Peer) NotifyRef(ref string, method string, params any) error {
+// Use the ToRef option to send a notification to a remote object reference.
+func (p *Peer) Notify(method string, params any, opts ...CallOption) error {
 	// Check if connection is closed
 	if err := p.getError(); err != nil {
 		return err
+	}
+
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
 	}
 
 	// Create notification (nil ID)
@@ -204,8 +208,8 @@ func (p *Peer) NotifyRef(ref string, method string, params any) error {
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
-	if ref != "" {
-		req.Ref = ref
+	if options.ref != nil {
+		req.Ref = options.ref.Ref
 	}
 
 	// Send notification via write channel (will be encoded in writeLoop)

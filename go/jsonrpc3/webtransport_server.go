@@ -180,15 +180,17 @@ func (c *WebTransportConn) handleWithCallback(onReady func(*WebTransportConn)) {
 }
 
 // Call invokes a method on the client and waits for the response.
-func (c *WebTransportConn) Call(method string, params any, result any) error {
-	return c.CallRef("", method, params, result)
-}
-
-// CallRef invokes a method on a remote reference and waits for the response.
-func (c *WebTransportConn) CallRef(ref string, method string, params any, result any) error {
+// Use the ToRef option to call a method on a remote object reference.
+func (c *WebTransportConn) Call(method string, params any, result any, opts ...CallOption) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
+	}
+
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
 	}
 
 	// Generate request ID
@@ -201,8 +203,8 @@ func (c *WebTransportConn) CallRef(ref string, method string, params any, result
 		return fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if ref != "" {
-		req.Ref = ref
+	if options.ref != nil {
+		req.Ref = options.ref.Ref
 	}
 
 	// Create response channel
@@ -242,15 +244,17 @@ func (c *WebTransportConn) CallRef(ref string, method string, params any, result
 }
 
 // Notify sends a notification to the client (no response expected).
-func (c *WebTransportConn) Notify(method string, params any) error {
-	return c.NotifyRef("", method, params)
-}
-
-// NotifyRef sends a notification to a remote reference.
-func (c *WebTransportConn) NotifyRef(ref string, method string, params any) error {
+// Use the ToRef option to send a notification to a remote object reference.
+func (c *WebTransportConn) Notify(method string, params any, opts ...CallOption) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
+	}
+
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
 	}
 
 	// Create notification (nil ID)
@@ -259,8 +263,8 @@ func (c *WebTransportConn) NotifyRef(ref string, method string, params any) erro
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
-	if ref != "" {
-		req.Ref = ref
+	if options.ref != nil {
+		req.Ref = options.ref.Ref
 	}
 
 	// Send notification via write channel (will be encoded in writeLoop)

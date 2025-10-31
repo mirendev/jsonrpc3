@@ -208,15 +208,16 @@ func (c *HTTPClient) shouldFallback(statusCode int) bool {
 }
 
 // Call invokes a JSON-RPC method and decodes the result into the provided value.
+// Use the ToRef option to call a method on a remote object reference.
 // Returns an error if the call fails or if the server returns an error.
-func (c *HTTPClient) Call(method string, params any, result any) error {
-	return c.CallRef("", method, params, result)
-}
-
-// CallRef invokes a JSON-RPC method on a remote reference.
-// If ref is empty, calls the method at the root level.
 // Automatically falls back to other formats if the server rejects the current format.
-func (c *HTTPClient) CallRef(ref string, method string, params any, result any) error {
+func (c *HTTPClient) Call(method string, params any, result any, opts ...CallOption) error {
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
+	}
+
 	// Prepare list of formats to try (current format first, then fallbacks)
 	formats := []string{c.contentType}
 	for _, format := range supportedFormats {
@@ -233,8 +234,8 @@ func (c *HTTPClient) CallRef(ref string, method string, params any, result any) 
 			return fmt.Errorf("failed to create request: %w", err)
 		}
 
-		if ref != "" {
-			req.Ref = ref
+		if options.ref != nil {
+			req.Ref = options.ref.Ref
 		}
 
 		// Encode request
@@ -400,14 +401,16 @@ func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, r
 }
 
 // Notify sends a notification (no response expected).
+// Use the ToRef option to send a notification to a remote object reference.
 // Notifications do not have an ID and the server will not send a response.
-func (c *HTTPClient) Notify(method string, params any) error {
-	return c.NotifyRef("", method, params)
-}
-
-// NotifyRef sends a notification to a remote reference.
 // Automatically falls back to other formats if the server rejects the current format.
-func (c *HTTPClient) NotifyRef(ref string, method string, params any) error {
+func (c *HTTPClient) Notify(method string, params any, opts ...CallOption) error {
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
+	}
+
 	// Prepare list of formats to try
 	formats := []string{c.contentType}
 	for _, format := range supportedFormats {
@@ -424,8 +427,8 @@ func (c *HTTPClient) NotifyRef(ref string, method string, params any) error {
 			return fmt.Errorf("failed to create notification: %w", err)
 		}
 
-		if ref != "" {
-			req.Ref = ref
+		if options.ref != nil {
+			req.Ref = options.ref.Ref
 		}
 
 		// Encode request

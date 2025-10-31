@@ -112,16 +112,16 @@ func TestWebTransportIntegration_BidirectionalCallbacks(t *testing.T) {
 			connMu.Unlock()
 
 			if sc != nil {
-				sc.NotifyRef(p.Callback.Ref, "onUpdate", map[string]any{
+				sc.Notify("onUpdate", map[string]any{
 					"topic":   p.Topic,
 					"message": "Update 1",
-				})
+				}, ToRef(p.Callback))
 
 				time.Sleep(50 * time.Millisecond)
-				sc.NotifyRef(p.Callback.Ref, "onUpdate", map[string]any{
+				sc.Notify("onUpdate", map[string]any{
 					"topic":   p.Topic,
 					"message": "Update 2",
-				})
+				}, ToRef(p.Callback))
 			}
 		}()
 
