@@ -81,11 +81,11 @@ func TestHTTPIntegration_CompleteWorkflow(t *testing.T) {
 	}
 	results, err := client.CallBatch(batchReqs)
 	require.NoError(t, err)
-	require.Len(t, results, 2)
+	require.Equal(t, 2, results.Len())
 
 	var batchAdd, batchMul int
-	require.NoError(t, results[0].Decode(&batchAdd))
-	require.NoError(t, results[1].Decode(&batchMul))
+	require.NoError(t, results.DecodeResult(0, &batchAdd))
+	require.NoError(t, results.DecodeResult(1, &batchMul))
 	assert.Equal(t, 6, batchAdd)
 	assert.Equal(t, 24, batchMul)
 }
@@ -237,21 +237,23 @@ func TestHTTPIntegration_MixedBatch(t *testing.T) {
 
 	results, err := client.CallBatch(batchReqs)
 	require.NoError(t, err)
-	require.Len(t, results, 3)
+	require.Equal(t, 3, results.Len())
 
 	// First should succeed
 	var result1 string
-	err = results[0].Decode(&result1)
+	err = results.DecodeResult(0, &result1)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", result1)
 
 	// Second should fail
-	assert.NotNil(t, results[1].Error)
-	assert.Equal(t, CodeMethodNotFound, results[1].Error.Code)
+	resp2, err := results.GetResponse(1)
+	require.NoError(t, err)
+	assert.NotNil(t, resp2.Error)
+	assert.Equal(t, CodeMethodNotFound, resp2.Error.Code)
 
 	// Third should succeed
 	var result3 string
-	err = results[2].Decode(&result3)
+	err = results.DecodeResult(2, &result3)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", result3)
 }

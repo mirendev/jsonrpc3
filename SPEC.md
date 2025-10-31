@@ -3006,7 +3006,135 @@ Where:
 - The reference identifier `"$rpc"` is reserved for protocol methods (see section 3.4) and MUST NOT be used as a user-defined reference
 - `LocalReference` objects MUST only have a single `$ref` member (no additional properties)
 
-## 7. Conclusion
+## 7. Examples
+
+This section provides practical examples of JSON-RPC 3.0 usage patterns to illustrate the protocol's capabilities.
+
+### 7.1. Streaming Data with Server-Sent Notifications
+
+A common use case for bidirectional communication is streaming large amounts of data from server to client without blocking. The client passes a local reference to a callback object, and the server sends notifications to that reference as data becomes available.
+
+**Scenario**: A client wants to download a large file in chunks.
+
+**Step 1**: Client creates a local callback object and initiates download
+
+The client first calls the server's `download` method, passing a reference to a local callback object:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "method": "download",
+  "params": {
+    "file": "/path/to/large/file.dat",
+    "callback": {"$ref": "download-callback-1"}
+  },
+  "id": 1
+}
+```
+
+**Step 2**: Server sends acknowledgement notification
+
+The server immediately sends an acknowledgement notification to the callback to confirm the download has started:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "download-callback-1",
+  "method": "onStart",
+  "params": {
+    "downloadId": "abc123",
+    "totalSize": 10485760,
+    "chunkSize": 65536
+  }
+}
+```
+
+**Step 3**: Server sends data chunks via notifications
+
+As data becomes available, the server sends notifications to the client's callback reference. These are notifications (no `id` field), so they don't expect responses:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "download-callback-1",
+  "method": "onData",
+  "params": {
+    "downloadId": "abc123",
+    "chunk": 0,
+    "data": "base64-encoded-data-here..."
+  }
+}
+```
+
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "download-callback-1",
+  "method": "onData",
+  "params": {
+    "downloadId": "abc123",
+    "chunk": 1,
+    "data": "base64-encoded-data-here..."
+  }
+}
+```
+
+**Step 4**: Server signals completion and returns result
+
+When all data has been sent, the server sends a final notification to signal completion:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "download-callback-1",
+  "method": "onComplete",
+  "params": {
+    "downloadId": "abc123",
+    "totalChunks": 160,
+    "checksum": "sha256-hash-here"
+  }
+}
+```
+
+Then the server responds to the original request with the final result:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "result": {
+    "downloadId": "abc123",
+    "success": true,
+    "bytesTransferred": 10485760
+  },
+  "id": 1
+}
+```
+
+**Benefits of this pattern**:
+- Non-blocking: The initial request returns immediately
+- Progressive: Client can process data as it arrives
+- One-way: Notifications don't wait for responses, maximizing throughput
+- Clean lifecycle: Reference can be disposed after `onComplete`
+
+**Error handling**: If an error occurs during download, the server can send an error notification:
+
+```json
+{
+  "jsonrpc": "3.0",
+  "ref": "download-callback-1",
+  "method": "onError",
+  "params": {
+    "downloadId": "abc123",
+    "error": {
+      "code": -32000,
+      "message": "Disk read error",
+      "data": {"details": "I/O error at offset 524288"}
+    }
+  }
+}
+```
+
+## 8. Conclusion
 
 JSON-RPC 3.0 extends JSON-RPC 2.0 with powerful capabilities for building distributed, object-oriented systems while maintaining backward compatibility. Object references enable remote object manipulation without exposing implementation details, and bidirectional calls enable reactive, event-driven architectures.
 

@@ -234,6 +234,125 @@ func (p *Peer) UnregisterObject(ref string) {
 	p.handler.session.RemoveLocalRef(ref)
 }
 
+// CallBatch sends a batch of requests and returns the results.
+// This is the low-level batch interface required by the Caller interface.
+// For a more convenient builder-based API, use the ExecuteBatch function.
+//
+// Example:
+//
+//	requests := []BatchRequest{
+//	    {Method: "method1", Params: params1},
+//	    {Method: "method2", Params: params2},
+//	}
+//	results, err := peer.CallBatch(requests)
+func (p *Peer) CallBatch(batchReqs []BatchRequest) (*BatchResults, error) {
+	// Check if connection is closed
+	if err := p.getError(); err != nil {
+		return nil, err
+	}
+
+	// Check if batch is empty
+	if len(batchReqs) == 0 {
+		return &BatchResults{responses: []*Response{}}, nil
+	}
+
+	// Convert BatchRequest to Request objects
+	requests := make([]*Request, len(batchReqs))
+	for i, breq := range batchReqs {
+		var id any
+		if !breq.IsNotification {
+			id = float64(p.nextID.Add(1))
+		}
+
+		req, err := NewRequest(breq.Method, breq.Params, id)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request %d: %w", i, err)
+		}
+
+		if breq.Ref != "" {
+			req.Ref = breq.Ref
+		}
+
+		requests[i] = req
+	}
+
+	// Create response channels for each request with an ID
+	responseChans := make(map[any]chan *Response)
+	for _, req := range requests {
+		if req.ID != nil {
+			respChan := make(chan *Response, 1)
+			responseChans[req.ID] = respChan
+			p.pendingReqs.Store(req.ID, respChan)
+		}
+	}
+
+	// Clean up pending requests when done
+	defer func() {
+		for id := range responseChans {
+			p.pendingReqs.Delete(id)
+		}
+	}()
+
+	// Create batch message
+	msgSet := &MessageSet{
+		Messages: make([]Message, len(requests)),
+		IsBatch:  true,
+	}
+	for i, req := range requests {
+		msgSet.Messages[i] = Message{
+			JSONRPC: req.JSONRPC,
+			Method:  req.Method,
+			Params:  req.Params,
+			ID:      req.ID,
+			Ref:     req.Ref,
+		}
+	}
+
+	// Send batch via write channel
+	select {
+	case p.writeChan <- msgSet:
+		// Successfully queued for sending
+	case <-p.closeChan:
+		return nil, fmt.Errorf("connection closed")
+	}
+
+	// Wait for all responses with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	responses := make([]*Response, len(requests))
+	responsesReceived := 0
+
+	// Collect responses
+	for i, req := range requests {
+		// Skip notifications (they don't have responses)
+		if req.ID == nil {
+			responses[i] = nil
+			responsesReceived++
+			continue
+		}
+
+		respChan, ok := responseChans[req.ID]
+		if !ok {
+			return nil, fmt.Errorf("missing response channel for request %v", req.ID)
+		}
+
+		select {
+		case resp := <-respChan:
+			responses[i] = resp
+			responsesReceived++
+
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timeout waiting for response %d: %w", i, ctx.Err())
+
+		case <-p.closeChan:
+			return nil, fmt.Errorf("connection closed while waiting for responses")
+		}
+	}
+
+	return &BatchResults{responses: responses}, nil
+}
+
 // GetSession returns the peer's session.
 func (p *Peer) GetSession() *Session {
 	return p.session

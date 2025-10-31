@@ -15,6 +15,9 @@ type Caller interface {
 	// NotifyRef sends a notification to a remote reference.
 	NotifyRef(ref string, method string, params any) error
 
+	// CallBatch sends a batch of requests and returns the results.
+	CallBatch(requests []BatchRequest) (*BatchResults, error)
+
 	// RegisterObject registers a local object that the remote peer can call.
 	// If ref is empty, a random reference ID is generated.
 	// Returns the reference ID that was used (either the provided one or the generated one).

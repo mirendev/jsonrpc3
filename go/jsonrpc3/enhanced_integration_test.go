@@ -203,17 +203,17 @@ func TestEnhancedIntegration_Batch(t *testing.T) {
 
 	results, err := client.CallBatch(requests)
 	require.NoError(t, err)
-	require.Len(t, results, 2)
+	require.Equal(t, 2, results.Len())
 
 	// Decode first result (DateTime)
 	var dt DateTime
-	err = results[0].Decode(&dt)
+	err = results.DecodeResult(0, &dt)
 	require.NoError(t, err)
 	assert.Equal(t, TypeDateTime, dt.Type)
 
 	// Decode second result (Bytes)
 	var b Bytes
-	err = results[1].Decode(&b)
+	err = results.DecodeResult(1, &b)
 	require.NoError(t, err)
 	assert.Equal(t, TypeBytes, b.Type)
 }

@@ -76,7 +76,7 @@ func TestHTTPClient_Notify(t *testing.T) {
 	assert.True(t, called)
 }
 
-func TestHTTPClient_CallBatch(t *testing.T) {
+func TestHTTPClient_Batch(t *testing.T) {
 	root := NewMethodMap()
 	root.Register("add", func(params Params) (any, error) {
 		var nums []int
@@ -96,28 +96,32 @@ func TestHTTPClient_CallBatch(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, nil)
 
-	// Create batch requests
-	requests := []BatchRequest{
-		{Method: "add", Params: []int{1, 2, 3}},
-		{Method: "add", Params: []int{4, 5, 6}},
-		{Method: "add", Params: []int{7, 8, 9}},
-	}
+	// Use ExecuteBatch with fluent builder API
+	results, err := ExecuteBatch(client, func(b *BatchBuilder) error {
+		b.Call("add", []int{1, 2, 3})
+		b.Call("add", []int{4, 5, 6})
+		b.Call("add", []int{7, 8, 9})
+		return nil
+	})
 
-	results, err := client.CallBatch(requests)
 	require.NoError(t, err)
-	require.Len(t, results, 3)
+	require.Equal(t, 3, results.Len())
 
-	var result1, result2, result3 int
-	require.NoError(t, results[0].Decode(&result1))
-	require.NoError(t, results[1].Decode(&result2))
-	require.NoError(t, results[2].Decode(&result3))
+	result1, err := results.GetResult(0)
+	require.NoError(t, err)
+	// CBOR returns uint64, JSON returns float64
+	assert.Contains(t, []any{uint64(6), float64(6)}, result1)
 
-	assert.Equal(t, 6, result1)
-	assert.Equal(t, 15, result2)
-	assert.Equal(t, 24, result3)
+	result2, err := results.GetResult(1)
+	require.NoError(t, err)
+	assert.Contains(t, []any{uint64(15), float64(15)}, result2)
+
+	result3, err := results.GetResult(2)
+	require.NoError(t, err)
+	assert.Contains(t, []any{uint64(24), float64(24)}, result3)
 }
 
-func TestHTTPClient_CallBatchWithNotifications(t *testing.T) {
+func TestHTTPClient_BatchWithNotifications(t *testing.T) {
 	root := NewMethodMap()
 
 	callCount := 0
@@ -133,25 +137,42 @@ func TestHTTPClient_CallBatchWithNotifications(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create batch with mix of requests and notifications
-	requests := []BatchRequest{
-		{Method: "test", Params: nil},
-		{Method: "test", Params: nil, IsNotification: true},
-		{Method: "test", Params: nil},
+	batchReqs := []BatchRequest{
+		{Method: "test"},
+		{Method: "test", IsNotification: true},
+		{Method: "test"},
 	}
 
-	results, err := client.CallBatch(requests)
+	results, err := client.CallBatch(batchReqs)
 	require.NoError(t, err)
 
-	// Should have 2 responses (notifications don't get responses)
-	require.Len(t, results, 2)
+	// All three responses (nil for notification)
+	require.Equal(t, 3, results.Len())
+
+	// Check that first and third have responses
+	result1, err := results.GetResult(0)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result1)
+
+	// Middle one is notification (nil response)
+	resp2, err := results.GetResponse(1)
+	require.NoError(t, err)
+	assert.Nil(t, resp2)
+
+	result3, err := results.GetResult(2)
+	require.NoError(t, err)
+	assert.Equal(t, "ok", result3)
 
 	// All three methods should have been called
 	assert.Equal(t, 3, callCount)
 }
 
-func TestHTTPClient_CallBatchAllNotifications(t *testing.T) {
+func TestHTTPClient_BatchAllNotifications(t *testing.T) {
 	root := NewMethodMap()
+
+	callCount := 0
 	root.Register("test", func(params Params) (any, error) {
+		callCount++
 		return "ok", nil
 	})
 
@@ -162,16 +183,25 @@ func TestHTTPClient_CallBatchAllNotifications(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create batch with all notifications
-	requests := []BatchRequest{
-		{Method: "test", Params: nil, IsNotification: true},
-		{Method: "test", Params: nil, IsNotification: true},
+	batchReqs := []BatchRequest{
+		{Method: "test", IsNotification: true},
+		{Method: "test", IsNotification: true},
 	}
 
-	results, err := client.CallBatch(requests)
+	results, err := client.CallBatch(batchReqs)
 	require.NoError(t, err)
 
-	// No responses for all notifications
-	assert.Nil(t, results)
+	// All responses are nil for notifications
+	require.Equal(t, 2, results.Len())
+
+	resp1, _ := results.GetResponse(0)
+	assert.Nil(t, resp1)
+
+	resp2, _ := results.GetResponse(1)
+	assert.Nil(t, resp2)
+
+	// Both methods should have been called on server
+	assert.Equal(t, 2, callCount)
 }
 
 func TestHTTPClient_SetContentType(t *testing.T) {
@@ -266,13 +296,17 @@ func TestHTTPClient_NilResult(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestBatchResult_DecodeWithError(t *testing.T) {
-	result := BatchResult{
-		Error: NewMethodNotFoundError("test"),
+func TestBatchResults_DecodeResultWithError(t *testing.T) {
+	results := &BatchResults{
+		responses: []*Response{
+			{
+				Error: NewMethodNotFoundError("test"),
+			},
+		},
 	}
 
 	var decoded string
-	err := result.Decode(&decoded)
+	err := results.DecodeResult(0, &decoded)
 	require.Error(t, err)
 
 	rpcErr, ok := err.(*Error)

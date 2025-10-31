@@ -149,6 +149,20 @@ func (c *HTTPClient) UnregisterCallback(ref string) {
 	}
 }
 
+// RegisterObject registers a local object that the server can invoke.
+// This is an alias for RegisterCallback to conform to the Caller interface.
+// Returns the reference that was used.
+func (c *HTTPClient) RegisterObject(ref string, obj Object) string {
+	c.RegisterCallback(ref, obj)
+	return ref
+}
+
+// UnregisterObject removes a previously registered local object.
+// This is an alias for UnregisterCallback to conform to the Caller interface.
+func (c *HTTPClient) UnregisterObject(ref string) {
+	c.UnregisterCallback(ref)
+}
+
 // generateID generates a unique request ID.
 func (c *HTTPClient) generateID() int64 {
 	return c.nextID.Add(1)
@@ -460,12 +474,10 @@ func (c *HTTPClient) NotifyRef(ref string, method string, params any) error {
 	return fmt.Errorf("all formats rejected by server")
 }
 
-// CallBatch sends multiple requests in a single batch.
-// Returns a slice of responses in the same order as the requests.
-// Note: Notifications in the batch will not have responses.
-// Automatically falls back to other formats if the server rejects the current format.
-func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
-	if len(requests) == 0 {
+// CallBatch sends a batch of requests and returns the results.
+// Implements the Caller interface for batch operations.
+func (c *HTTPClient) CallBatch(batchReqs []BatchRequest) (*BatchResults, error) {
+	if len(batchReqs) == 0 {
 		return nil, fmt.Errorf("batch cannot be empty")
 	}
 
@@ -480,12 +492,10 @@ func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
 	var lastErr error
 	for _, format := range formats {
 		// Create batch of requests
-		batch := make(Batch, len(requests))
-		for i, breq := range requests {
+		batch := make(Batch, len(batchReqs))
+		for i, breq := range batchReqs {
 			var id any
-			if breq.IsNotification {
-				id = nil
-			} else {
+			if !breq.IsNotification {
 				id = c.generateID()
 			}
 
@@ -526,11 +536,12 @@ func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
 		// Check for 204 No Content (all notifications)
 		if httpResp.StatusCode == http.StatusNoContent {
 			httpResp.Body.Close()
-			// Success - update client's format preference
 			if format != c.contentType {
 				c.SetContentType(format)
 			}
-			return nil, nil
+			// Return empty results for all-notification batch
+			responses := make([]*Response, len(batchReqs))
+			return &BatchResults{responses: responses, format: format}, nil
 		}
 
 		// Check HTTP status
@@ -563,19 +574,30 @@ func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
 			c.SetContentType(format)
 		}
 
-		// Convert to results
-		results := make([]BatchResult, len(batchResp))
-		for i, resp := range batchResp {
-			results[i].ID = resp.ID
-			results[i].Error = resp.Error
-			results[i].format = format // Track the format for decoding
-
-			if resp.Result != nil {
-				results[i].Result = resp.Result
+		// Align responses with original requests
+		// Build map of ID to response (convert IDs to string for reliable comparison)
+		respMap := make(map[string]*Response)
+		for i := range batchResp {
+			if batchResp[i].ID != nil {
+				idStr := fmt.Sprintf("%v", batchResp[i].ID)
+				respMap[idStr] = &batchResp[i]
 			}
 		}
 
-		return results, nil
+		// Create response array matching request order
+		responses := make([]*Response, len(batch))
+		for i, req := range batch {
+			if req.ID == nil {
+				// Notification - no response expected
+				responses[i] = nil
+			} else {
+				// Look up response by ID (convert to string for comparison)
+				idStr := fmt.Sprintf("%v", req.ID)
+				responses[i] = respMap[idStr]
+			}
+		}
+
+		return &BatchResults{responses: responses, format: format}, nil
 	}
 
 	// All formats failed
@@ -585,29 +607,11 @@ func (c *HTTPClient) CallBatch(requests []BatchRequest) ([]BatchResult, error) {
 	return nil, fmt.Errorf("all formats rejected by server")
 }
 
-// BatchRequest represents a request in a batch call.
-type BatchRequest struct {
-	Ref            string // Optional reference
-	Method         string
-	Params         any
-	IsNotification bool // If true, no response will be returned
-}
-
-// BatchResult represents a response from a batch call.
-type BatchResult struct {
-	ID     any
-	Result RawMessage
-	Error  *Error
-	format string // internal: tracks the format of the result
-}
-
-// Decode decodes the result into the provided value.
-func (r *BatchResult) Decode(v any) error {
-	if r.Error != nil {
-		return r.Error
-	}
-
-	// Use the format that was used for the batch call
-	params := NewParamsWithFormat(r.Result, r.format)
-	return params.Decode(v)
+// Close closes the HTTP client.
+// For HTTP clients, this is a no-op as HTTP connections are managed by the underlying http.Client.
+// This method is provided to conform to the Caller interface.
+func (c *HTTPClient) Close() error {
+	// HTTP client doesn't maintain persistent connections in the same way
+	// The http.Client manages connection pooling and reuse automatically
+	return nil
 }

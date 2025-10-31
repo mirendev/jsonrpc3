@@ -164,6 +164,11 @@ type MessageSetConvertible interface {
 	ToMessageSet() MessageSet
 }
 
+// ToMessageSet returns the MessageSet itself (satisfies MessageSetConvertible).
+func (m *MessageSet) ToMessageSet() MessageSet {
+	return *m
+}
+
 // ToMessageSet converts a Request to a MessageSet.
 func (r *Request) ToMessageSet() MessageSet {
 	return MessageSet{
@@ -334,6 +339,11 @@ func NewReferenceNotFoundError(ref string) *Error {
 
 func NewReferenceTypeError(data any) *Error {
 	return &Error{Code: CodeReferenceTypeError, Message: "Reference type error", Data: data}
+}
+
+// NewError creates a custom error with the specified code, message, and data.
+func NewError(code int, message string, data any) *Error {
+	return &Error{Code: code, Message: message, Data: data}
 }
 
 // Reference represents a reference to a local object using {"$ref": "id"} format.

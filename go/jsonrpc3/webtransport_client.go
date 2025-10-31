@@ -225,6 +225,112 @@ func (c *WebTransportClient) NotifyRef(ref string, method string, params any) er
 	}
 }
 
+// CallBatch sends a batch of requests and returns the results.
+func (c *WebTransportClient) CallBatch(batchReqs []BatchRequest) (*BatchResults, error) {
+	// Check if connection is closed
+	if err := c.getError(); err != nil {
+		return nil, err
+	}
+
+	// Check if batch is empty
+	if len(batchReqs) == 0 {
+		return &BatchResults{responses: []*Response{}}, nil
+	}
+
+	// Convert BatchRequest to Request objects
+	requests := make([]*Request, len(batchReqs))
+	for i, breq := range batchReqs {
+		var id any
+		if !breq.IsNotification {
+			id = float64(c.nextID.Add(1))
+		}
+
+		req, err := NewRequestWithFormat(breq.Method, breq.Params, id, c.contentType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request %d: %w", i, err)
+		}
+
+		if breq.Ref != "" {
+			req.Ref = breq.Ref
+		}
+
+		requests[i] = req
+	}
+
+	// Create response channels for each request with an ID
+	responseChans := make(map[any]chan *Response)
+	for _, req := range requests {
+		if req.ID != nil {
+			respChan := make(chan *Response, 1)
+			responseChans[req.ID] = respChan
+			c.pendingReqs.Store(req.ID, respChan)
+		}
+	}
+
+	// Clean up pending requests when done
+	defer func() {
+		for id := range responseChans {
+			c.pendingReqs.Delete(id)
+		}
+	}()
+
+	// Create batch message
+	msgSet := &MessageSet{
+		Messages: make([]Message, len(requests)),
+		IsBatch:  true,
+	}
+	for i, req := range requests {
+		msgSet.Messages[i] = Message{
+			JSONRPC: req.JSONRPC,
+			Method:  req.Method,
+			Params:  req.Params,
+			ID:      req.ID,
+			Ref:     req.Ref,
+		}
+	}
+
+	// Send batch message
+	select {
+	case c.writeChan <- msgSet:
+		// Successfully queued for sending
+	case <-c.closeChan:
+		return nil, fmt.Errorf("connection closed")
+	}
+
+	// Wait for all responses with timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	responses := make([]*Response, len(requests))
+
+	// Collect responses
+	for i, req := range requests {
+		// Skip notifications (they don't have responses)
+		if req.ID == nil {
+			responses[i] = nil
+			continue
+		}
+
+		respChan, ok := responseChans[req.ID]
+		if !ok {
+			return nil, fmt.Errorf("missing response channel for request %v", req.ID)
+		}
+
+		select {
+		case resp := <-respChan:
+			responses[i] = resp
+
+		case <-ctx.Done():
+			return nil, fmt.Errorf("timeout waiting for response %d: %w", i, ctx.Err())
+
+		case <-c.closeChan:
+			return nil, fmt.Errorf("connection closed while waiting for responses")
+		}
+	}
+
+	return &BatchResults{responses: responses}, nil
+}
+
 // RegisterObject registers a local object that the server can call.
 // If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
 // Returns the reference ID that was used (either the provided one or the generated one).
