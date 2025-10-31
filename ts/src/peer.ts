@@ -10,6 +10,7 @@ import { newRequest, isReference, toBatch, batchResponseToMessageSet } from "./t
 import { Handler } from "./handler.ts";
 import { getCodec, MimeTypeJSON, type Codec } from "./encoding.ts";
 import { RpcError } from "./error.ts";
+import { JsonStreamDecoder } from "./stream-decoder.ts";
 
 export interface PeerOptions {
   mimeType?: string;
@@ -47,6 +48,9 @@ export class Peer {
 
   // Write mutex to ensure serialized writes
   private writeMutex = Promise.resolve();
+
+  // Stream decoder for handling partial JSON chunks
+  private streamDecoder = new JsonStreamDecoder();
 
   constructor(
     readable: ReadableStream<Uint8Array>,
@@ -221,7 +225,12 @@ export class Peer {
 
       try {
         const bytes = this.codec.marshalMessages(msgSet);
-        await this.writer.write(bytes);
+        // Append newline for NDJSON format
+        const newline = new Uint8Array([10]); // '\n'
+        const bytesWithNewline = new Uint8Array(bytes.length + 1);
+        bytesWithNewline.set(bytes);
+        bytesWithNewline.set(newline, bytes.length);
+        await this.writer.write(bytesWithNewline);
       } catch (err) {
         this.connError = err as Error;
         this.close();
@@ -244,27 +253,33 @@ export class Peer {
           break;
         }
 
-        // Decode message set
-        const msgSet = this.codec.unmarshalMessages(value);
+        // Feed chunk to stream decoder to extract complete JSON values
+        const jsonMessages = this.streamDecoder.decode(value);
 
-        // Determine if all messages are requests or responses
-        const allRequests = msgSet.messages.every((msg) => "method" in msg);
-        const allResponses = msgSet.messages.every((msg) => "result" in msg || "error" in msg);
+        // Process each complete JSON message
+        for (const jsonBytes of jsonMessages) {
+          // Decode message set
+          const msgSet = this.codec.unmarshalMessages(jsonBytes);
 
-        if (allRequests && msgSet.isBatch) {
-          // Handle batch requests
-          this.handleIncomingBatch(msgSet).catch((err) => {
-            console.error("Error handling batch:", err);
-          });
-        } else if (allRequests) {
-          // Handle single request
-          this.handleIncomingRequest(msgSet.messages[0] as Request).catch((err) => {
-            console.error("Error handling request:", err);
-          });
-        } else if (allResponses) {
-          // Handle responses
-          for (const msg of msgSet.messages) {
-            this.handleIncomingResponse(msg as Response);
+          // Determine if all messages are requests or responses
+          const allRequests = msgSet.messages.every((msg) => "method" in msg);
+          const allResponses = msgSet.messages.every((msg) => "result" in msg || "error" in msg);
+
+          if (allRequests && msgSet.isBatch) {
+            // Handle batch requests
+            this.handleIncomingBatch(msgSet).catch((err) => {
+              console.error("Error handling batch:", err);
+            });
+          } else if (allRequests) {
+            // Handle single request
+            this.handleIncomingRequest(msgSet.messages[0] as Request).catch((err) => {
+              console.error("Error handling request:", err);
+            });
+          } else if (allResponses) {
+            // Handle responses
+            for (const msg of msgSet.messages) {
+              this.handleIncomingResponse(msg as Response);
+            }
           }
         }
       }

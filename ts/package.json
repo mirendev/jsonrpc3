@@ -7,7 +7,9 @@
     ".": "./src/index.ts",
     "./http": "./src/http-server.ts",
     "./client": "./src/http-client.ts",
-    "./peer": "./src/peer.ts"
+    "./peer": "./src/peer.ts",
+    "./ws": "./src/ws-server.ts",
+    "./ws-client": "./src/ws-client.ts"
   },
   "scripts": {
     "test": "bun test",

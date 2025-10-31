@@ -18,6 +18,7 @@ export interface HttpClientOptions {
 export class HttpClient {
   private codec;
   private requestId = 1;
+  private sessionId?: string;
 
   constructor(
     private url: string,
@@ -43,16 +44,29 @@ export class HttpClient {
 
     const reqBytes = this.codec.marshalMessages(msgSet);
 
+    const headers: Record<string, string> = {
+      "Content-Type": this.codec.mimeType(),
+    };
+
+    // Include session ID if we have one
+    if (this.sessionId) {
+      headers["RPC-Session-Id"] = this.sessionId;
+    }
+
     const httpResp = await fetch(this.url, {
       method: "POST",
-      headers: {
-        "Content-Type": this.codec.mimeType(),
-      },
+      headers,
       body: reqBytes,
     });
 
     if (!httpResp.ok) {
       throw new Error(`HTTP error: ${httpResp.status}`);
+    }
+
+    // Extract and store session ID from response
+    const respSessionId = httpResp.headers.get("RPC-Session-Id");
+    if (respSessionId) {
+      this.sessionId = respSessionId;
     }
 
     const respBytes = new Uint8Array(await httpResp.arrayBuffer());
@@ -93,13 +107,26 @@ export class HttpClient {
 
     const reqBytes = this.codec.marshalMessages(msgSet);
 
-    await fetch(this.url, {
+    const headers: Record<string, string> = {
+      "Content-Type": this.codec.mimeType(),
+    };
+
+    // Include session ID if we have one
+    if (this.sessionId) {
+      headers["RPC-Session-Id"] = this.sessionId;
+    }
+
+    const httpResp = await fetch(this.url, {
       method: "POST",
-      headers: {
-        "Content-Type": this.codec.mimeType(),
-      },
+      headers,
       body: reqBytes,
     });
+
+    // Extract and store session ID from response
+    const respSessionId = httpResp.headers.get("RPC-Session-Id");
+    if (respSessionId) {
+      this.sessionId = respSessionId;
+    }
   }
 
   /**
@@ -113,16 +140,29 @@ export class HttpClient {
 
     const reqBytes = this.codec.marshalMessages(msgSet);
 
+    const headers: Record<string, string> = {
+      "Content-Type": this.codec.mimeType(),
+    };
+
+    // Include session ID if we have one
+    if (this.sessionId) {
+      headers["RPC-Session-Id"] = this.sessionId;
+    }
+
     const httpResp = await fetch(this.url, {
       method: "POST",
-      headers: {
-        "Content-Type": this.codec.mimeType(),
-      },
+      headers,
       body: reqBytes,
     });
 
     if (!httpResp.ok) {
       throw new Error(`HTTP error: ${httpResp.status}`);
+    }
+
+    // Extract and store session ID from response
+    const respSessionId = httpResp.headers.get("RPC-Session-Id");
+    if (respSessionId) {
+      this.sessionId = respSessionId;
     }
 
     const respBytes = new Uint8Array(await httpResp.arrayBuffer());

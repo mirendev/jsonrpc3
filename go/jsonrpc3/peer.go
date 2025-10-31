@@ -45,7 +45,7 @@ type Peer struct {
 
 // NewPeer creates a new bidirectional JSON-RPC 3.0 peer over a stream-based transport.
 // The rootObject handles incoming method calls from the remote peer.
-// Default encoding is MimeTypeCBOR.
+// Default encoding is MimeTypeJSON.
 //
 // Options:
 //   - WithContentType(contentType) - specify encoding format
@@ -60,7 +60,7 @@ type Peer struct {
 func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...ClientOption) (*Peer, error) {
 	// Apply options with defaults
 	options := &clientOptions{
-		contentType: MimeTypeCBOR,
+		contentType: MimeTypeJSON,
 	}
 	for _, opt := range opts {
 		opt(options)
@@ -429,8 +429,14 @@ func (p *Peer) writeLoop() {
 				return
 			}
 
-			// Write to stream
+			// Write to stream with newline for NDJSON compatibility
 			if _, err := p.writer.Write(data); err != nil {
+				p.notifyPendingRequest(item, fmt.Errorf("write error: %w", err))
+				p.setError(fmt.Errorf("write error: %w", err))
+				return
+			}
+			// Add newline after each JSON message (NDJSON format)
+			if _, err := p.writer.Write([]byte{'\n'}); err != nil {
 				p.notifyPendingRequest(item, fmt.Errorf("write error: %w", err))
 				p.setError(fmt.Errorf("write error: %w", err))
 				return

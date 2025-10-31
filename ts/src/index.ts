@@ -89,3 +89,9 @@ export { HttpClient } from "./http-client.ts";
 // Peer Transport
 export type { PeerOptions } from "./peer.ts";
 export { Peer } from "./peer.ts";
+
+// WebSocket Transport
+export type { WsServerOptions } from "./ws-server.ts";
+export type { WsClientOptions } from "./ws-client.ts";
+export { WsServer, WsServerClient } from "./ws-server.ts";
+export { WsClient } from "./ws-client.ts";
