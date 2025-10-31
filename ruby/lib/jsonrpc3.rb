@@ -11,6 +11,7 @@ require_relative "jsonrpc3/handler"
 require_relative "jsonrpc3/http_client"
 require_relative "jsonrpc3/http_server"
 require_relative "jsonrpc3/peer"
+require_relative "jsonrpc3/batch"
 
 # JSON-RPC 3.0 Ruby implementation
 module JSONRPC3
