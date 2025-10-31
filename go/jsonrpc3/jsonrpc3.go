@@ -357,6 +357,11 @@ func NewReference(ref string) Reference {
 	return Reference{Ref: ref}
 }
 
+// Call invokes a method on the remote reference using the provided Caller.
+func (r Reference) Call(caller Caller, method string, params any, result any) error {
+	return caller.Call(method, params, result, ToRef(r))
+}
+
 // Protocol is the special reference used for protocol introspection methods.
 // Use this with ToRef() to call protocol methods like session_id, list_refs, etc.
 // Example: caller.Call("session_id", nil, &result, ToRef(Protocol))

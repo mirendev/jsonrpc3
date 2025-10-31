@@ -24,7 +24,7 @@ func main() {
 	// Create root object with test methods
 	root := jsonrpc3.NewMethodMap()
 
-	// Add method
+	// Add method with introspection metadata
 	root.Register("add", func(params jsonrpc3.Params) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
@@ -35,20 +35,24 @@ func main() {
 			sum += n
 		}
 		return sum, nil
-	})
+	},
+		jsonrpc3.WithDescription("Adds a list of numbers"),
+		jsonrpc3.WithPositionalParams([]string{"number"}))
 
-	// Echo method
+	// Echo method with introspection metadata
 	root.Register("echo", func(params jsonrpc3.Params) (any, error) {
 		var data any
 		if err := params.Decode(&data); err != nil {
 			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
 		}
 		return data, nil
-	})
+	},
+		jsonrpc3.WithDescription("Echoes back the input"))
 
-	// Create counter method
+	// Create counter method with introspection metadata
 	root.Register("createCounter", func(params jsonrpc3.Params) (any, error) {
 		counter := jsonrpc3.NewMethodMap()
+		counter.Type = "Counter"
 		count := 0
 		var mu sync.Mutex
 
@@ -57,16 +61,19 @@ func main() {
 			defer mu.Unlock()
 			count++
 			return count, nil
-		})
+		},
+			jsonrpc3.WithDescription("Increments the counter by 1"))
 
 		counter.Register("getValue", func(params jsonrpc3.Params) (any, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			return count, nil
-		})
+		},
+			jsonrpc3.WithDescription("Gets the current counter value"))
 
 		return counter, nil
-	})
+	},
+		jsonrpc3.WithDescription("Creates a new counter object"))
 
 	// If stdio mode, create peer on stdin/stdout and wait
 	if *useStdio {

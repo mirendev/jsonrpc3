@@ -173,6 +173,112 @@ def test_method_map_introspection():
     assert "increment" in methods
     assert "$type" in methods
     assert "$methods" in methods
+    assert "$method" in methods
+
+
+def test_method_introspection_with_metadata():
+    """Test $method introspection with full metadata."""
+    map_obj = MethodMap()
+
+    def add_handler(params):
+        data = params.decode()
+        return data["a"] + data["b"]
+
+    # Register with full metadata
+    map_obj.register(
+        "add",
+        add_handler,
+        description="Adds two numbers",
+        params={"a": "number", "b": "number"}
+    )
+
+    # Get method info
+    result = map_obj.call_method("$method", new_params("add"))
+    assert result is not None
+    assert result["name"] == "add"
+    assert result["description"] == "Adds two numbers"
+    assert result["params"] == {"a": "number", "b": "number"}
+
+
+def test_method_introspection_with_positional_params():
+    """Test $method introspection with positional parameters."""
+    map_obj = MethodMap()
+
+    def multiply_handler(params):
+        data = params.decode()
+        return data[0] * data[1]
+
+    # Register with positional params
+    map_obj.register(
+        "multiply",
+        multiply_handler,
+        description="Multiplies two numbers",
+        params=["number", "number"]
+    )
+
+    # Get method info
+    result = map_obj.call_method("$method", new_params("multiply"))
+    assert result is not None
+    assert result["name"] == "multiply"
+    assert result["description"] == "Multiplies two numbers"
+    assert result["params"] == ["number", "number"]
+
+
+def test_method_introspection_minimal():
+    """Test $method introspection with minimal metadata."""
+    map_obj = MethodMap()
+
+    def simple_handler(params):
+        return "ok"
+
+    # Register without optional metadata
+    map_obj.register("simple", simple_handler)
+
+    # Get method info
+    result = map_obj.call_method("$method", new_params("simple"))
+    assert result is not None
+    assert result["name"] == "simple"
+    assert "description" not in result
+    assert "params" not in result
+
+
+def test_method_introspection_nonexistent():
+    """Test $method introspection for non-existent method."""
+    map_obj = MethodMap()
+
+    # Query non-existent method should return None
+    result = map_obj.call_method("$method", new_params("nonexistent"))
+    assert result is None
+
+
+def test_method_introspection_invalid_params():
+    """Test $method introspection with invalid parameter type."""
+    map_obj = MethodMap()
+
+    # Pass non-string parameter should raise error
+    with pytest.raises(RpcError) as exc_info:
+        map_obj.call_method("$method", new_params({"invalid": "dict"}))
+
+    assert exc_info.value.code == -32602  # CODE_INVALID_PARAMS
+
+
+def test_backwards_compatibility():
+    """Test that register() works without optional parameters."""
+    map_obj = MethodMap()
+
+    def old_style_handler(params):
+        return "works"
+
+    # Should work without description or params arguments
+    map_obj.register("old_style", old_style_handler)
+
+    # Should be callable
+    result = map_obj.call_method("old_style", NULL_PARAMS)
+    assert result == "works"
+
+    # Should appear in methods list
+    methods = map_obj.call_method("$methods", NULL_PARAMS)
+    assert "old_style" in methods
 
 
 def test_json_codec_single_message():

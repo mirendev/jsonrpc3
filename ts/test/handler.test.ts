@@ -172,3 +172,186 @@ describe("Handler - Batch", () => {
     expect(responses[0]?.id).toBe(1);
   });
 });
+
+describe("MethodMap Introspection", () => {
+  test("$methods includes introspection methods", async () => {
+    const methodMap = new MethodMap();
+    methodMap.type = "TestObject";
+
+    methodMap.register("add", (params) => {
+      const nums = params.decode<number[]>();
+      return nums[0]! + nums[1]!;
+    });
+
+    methodMap.register("subtract", (params) => {
+      const nums = params.decode<number[]>();
+      return nums[0]! - nums[1]!;
+    });
+
+    const params = newParams(undefined);
+    const result = await methodMap.callMethod("$methods", params);
+
+    expect(Array.isArray(result)).toBe(true);
+    const methods = result as string[];
+    expect(methods).toContain("add");
+    expect(methods).toContain("subtract");
+    expect(methods).toContain("$methods");
+    expect(methods).toContain("$type");
+    expect(methods).toContain("$method");
+  });
+
+  test("$type returns custom type", async () => {
+    const methodMap = new MethodMap();
+    methodMap.type = "TestObject";
+
+    const params = newParams(undefined);
+    const result = await methodMap.callMethod("$type", params);
+
+    expect(result).toBe("TestObject");
+  });
+
+  test("$type returns default when not set", async () => {
+    const methodMap = new MethodMap();
+
+    const params = newParams(undefined);
+    const result = await methodMap.callMethod("$type", params);
+
+    expect(result).toBe("MethodMap");
+  });
+});
+
+describe("MethodMap $method Introspection", () => {
+  test("$method with named params", async () => {
+    const methodMap = new MethodMap();
+
+    methodMap.register("add", (params) => {
+      const { a, b } = params.decode<{ a: number; b: number }>();
+      return a + b;
+    }, {
+      description: "Adds two numbers and returns the sum",
+      params: {
+        a: "number",
+        b: "number",
+      },
+    });
+
+    const params = newParams("add");
+    const result = await methodMap.callMethod("$method", params);
+
+    expect(result).toBeDefined();
+    const info = result as Record<string, unknown>;
+    expect(info.name).toBe("add");
+    expect(info.description).toBe("Adds two numbers and returns the sum");
+    expect(info.params).toEqual({
+      a: "number",
+      b: "number",
+    });
+  });
+
+  test("$method with positional params", async () => {
+    const methodMap = new MethodMap();
+
+    methodMap.register("multiply", (params) => {
+      const nums = params.decode<number[]>();
+      return nums.reduce((a, b) => a * b, 1);
+    }, {
+      description: "Multiplies all provided numbers",
+      params: ["number", "number", "...number"],
+    });
+
+    const params = newParams("multiply");
+    const result = await methodMap.callMethod("$method", params);
+
+    expect(result).toBeDefined();
+    const info = result as Record<string, unknown>;
+    expect(info.name).toBe("multiply");
+    expect(info.description).toBe("Multiplies all provided numbers");
+    expect(info.params).toEqual(["number", "number", "...number"]);
+  });
+
+  test("$method without metadata", async () => {
+    const methodMap = new MethodMap();
+
+    methodMap.register("noMeta", () => {
+      return "test";
+    });
+
+    const params = newParams("noMeta");
+    const result = await methodMap.callMethod("$method", params);
+
+    expect(result).toBeDefined();
+    const info = result as Record<string, unknown>;
+    expect(info.name).toBe("noMeta");
+    expect(info.description).toBeUndefined();
+    expect(info.params).toBeUndefined();
+  });
+
+  test("$method for non-existent method returns null", async () => {
+    const methodMap = new MethodMap();
+
+    const params = newParams("doesNotExist");
+    const result = await methodMap.callMethod("$method", params);
+
+    expect(result).toBeNull();
+  });
+
+  test("$method with invalid params throws error", async () => {
+    const methodMap = new MethodMap();
+
+    const params = newParams(123); // Not a string
+
+    expect(methodMap.callMethod("$method", params)).rejects.toThrow();
+  });
+
+  test("backwards compatibility - register without options", async () => {
+    const methodMap = new MethodMap();
+
+    // Old-style registration should still work
+    methodMap.register("oldStyle", (params) => {
+      return "works";
+    });
+
+    const params = newParams(undefined);
+    const result = await methodMap.callMethod("oldStyle", params);
+
+    expect(result).toBe("works");
+  });
+
+  test("backwards compatibility - register with only description", async () => {
+    const methodMap = new MethodMap();
+
+    methodMap.register("withDesc", (params) => {
+      return "works";
+    }, {
+      description: "A method with only description",
+    });
+
+    const params = newParams("withDesc");
+    const result = await methodMap.callMethod("$method", params);
+
+    expect(result).toBeDefined();
+    const info = result as Record<string, unknown>;
+    expect(info.name).toBe("withDesc");
+    expect(info.description).toBe("A method with only description");
+    expect(info.params).toBeUndefined();
+  });
+
+  test("backwards compatibility - register with only params", async () => {
+    const methodMap = new MethodMap();
+
+    methodMap.register("withParams", (params) => {
+      return "works";
+    }, {
+      params: { x: "number" },
+    });
+
+    const params = newParams("withParams");
+    const result = await methodMap.callMethod("$method", params);
+
+    expect(result).toBeDefined();
+    const info = result as Record<string, unknown>;
+    expect(info.name).toBe("withParams");
+    expect(info.description).toBeUndefined();
+    expect(info.params).toEqual({ x: "number" });
+  });
+});

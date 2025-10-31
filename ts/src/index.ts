@@ -77,7 +77,7 @@ export { Handler } from "./handler.ts";
 export { ProtocolHandler } from "./protocol.ts";
 
 // Helpers
-export type { MethodHandler } from "./helpers.ts";
+export type { MethodHandler, MethodInfo, RegisterOptions } from "./helpers.ts";
 export { MethodMap } from "./helpers.ts";
 
 // HTTP Transport

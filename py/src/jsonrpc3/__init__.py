@@ -54,7 +54,7 @@ from .handler import Handler
 from .protocol import ProtocolHandler
 
 # Helpers
-from .helpers import MethodMap
+from .helpers import MethodMap, MethodInfo
 
 # Transports
 from .http_client import HttpClient
@@ -115,6 +115,7 @@ __all__ = [
     "ProtocolHandler",
     # Helpers
     "MethodMap",
+    "MethodInfo",
     # Transports
     "HttpClient",
     "HttpServer",

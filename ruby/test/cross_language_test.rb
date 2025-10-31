@@ -123,6 +123,76 @@ class CrossLanguageTest < Minitest::Test
     assert_equal 11, results.get_result(2)
   end
 
+  def test_ruby_client_can_query_go_server_methods
+    client = JSONRPC3::HttpClient.new("http://localhost:#{HTTP_PORT}")
+
+    # Query available methods
+    methods = client.call("$methods")
+    assert methods.is_a?(Array)
+    assert_includes methods, "add"
+    assert_includes methods, "echo"
+    assert_includes methods, "createCounter"
+    assert_includes methods, "$methods"
+    assert_includes methods, "$type"
+    assert_includes methods, "$method"
+  end
+
+  def test_ruby_client_can_query_go_server_method_info
+    client = JSONRPC3::HttpClient.new("http://localhost:#{HTTP_PORT}")
+
+    # Query info for 'add' method
+    info = client.call("$method", "add")
+    assert_equal "add", info["name"]
+    assert_equal "Adds a list of numbers", info["description"]
+    assert_equal ["number"], info["params"]
+
+    # Query info for 'echo' method
+    info = client.call("$method", "echo")
+    assert_equal "echo", info["name"]
+    assert_equal "Echoes back the input", info["description"]
+    refute info.key?("params")
+
+    # Query info for 'createCounter' method
+    info = client.call("$method", "createCounter")
+    assert_equal "createCounter", info["name"]
+    assert_equal "Creates a new counter object", info["description"]
+  end
+
+  def test_ruby_client_can_query_go_counter_introspection
+    client = JSONRPC3::HttpClient.new("http://localhost:#{HTTP_PORT}")
+
+    # Create a counter
+    counter_ref = client.call("createCounter")
+    assert counter_ref.is_a?(Hash)
+    assert counter_ref.key?("$ref")
+
+    # Query counter's type
+    type = client.call("$type", nil, counter_ref)
+    assert_equal "Counter", type
+
+    # Query counter's methods
+    methods = client.call("$methods", nil, counter_ref)
+    assert_includes methods, "increment"
+    assert_includes methods, "getValue"
+
+    # Query counter's method info
+    info = client.call("$method", "increment", counter_ref)
+    assert_equal "increment", info["name"]
+    assert_equal "Increments the counter by 1", info["description"]
+
+    info = client.call("$method", "getValue", counter_ref)
+    assert_equal "getValue", info["name"]
+    assert_equal "Gets the current counter value", info["description"]
+  end
+
+  def test_ruby_client_can_query_nonexistent_method
+    client = JSONRPC3::HttpClient.new("http://localhost:#{HTTP_PORT}")
+
+    # Query info for non-existent method
+    info = client.call("$method", "nonexistent")
+    assert_nil info
+  end
+
 end
 
 # Run startup/shutdown hooks

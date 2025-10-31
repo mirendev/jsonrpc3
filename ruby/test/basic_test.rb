@@ -136,6 +136,127 @@ class BasicTest < Minitest::Test
     assert_includes methods, "increment"
     assert_includes methods, "$type"
     assert_includes methods, "$methods"
+    assert_includes methods, "$method"
+  end
+
+  def test_method_map_method_info_basic
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add") do |params|
+      data = params.decode
+      data["a"] + data["b"]
+    end
+
+    params = JSONRPC3.new_params("add")
+    info = map.call_method("$method", params)
+
+    assert_equal "add", info["name"]
+    refute info.key?("description")
+    refute info.key?("params")
+  end
+
+  def test_method_map_method_info_with_description
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add", description: "Adds two numbers") do |params|
+      data = params.decode
+      data["a"] + data["b"]
+    end
+
+    params = JSONRPC3.new_params("add")
+    info = map.call_method("$method", params)
+
+    assert_equal "add", info["name"]
+    assert_equal "Adds two numbers", info["description"]
+  end
+
+  def test_method_map_method_info_with_named_params
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add",
+                 description: "Adds two numbers",
+                 params: { "a" => "number", "b" => "number" }) do |params|
+      data = params.decode
+      data["a"] + data["b"]
+    end
+
+    params = JSONRPC3.new_params("add")
+    info = map.call_method("$method", params)
+
+    assert_equal "add", info["name"]
+    assert_equal "Adds two numbers", info["description"]
+    assert_equal({ "a" => "number", "b" => "number" }, info["params"])
+  end
+
+  def test_method_map_method_info_with_positional_params
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add",
+                 description: "Adds two numbers",
+                 params: ["number", "number"]) do |params|
+      data = params.decode
+      data[0] + data[1]
+    end
+
+    params = JSONRPC3.new_params("add")
+    info = map.call_method("$method", params)
+
+    assert_equal "add", info["name"]
+    assert_equal "Adds two numbers", info["description"]
+    assert_equal ["number", "number"], info["params"]
+  end
+
+  def test_method_map_method_info_nonexistent
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add") do |params|
+      data = params.decode
+      data["a"] + data["b"]
+    end
+
+    params = JSONRPC3.new_params("subtract")
+    info = map.call_method("$method", params)
+
+    assert_nil info
+  end
+
+  def test_method_map_method_info_invalid_params
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add") do |params|
+      data = params.decode
+      data["a"] + data["b"]
+    end
+
+    # Pass a number instead of a string
+    params = JSONRPC3.new_params(123)
+
+    error = assert_raises(JSONRPC3::RpcError) do
+      map.call_method("$method", params)
+    end
+
+    assert_equal JSONRPC3::CODE_INVALID_PARAMS, error.code
+    assert_match(/string parameter/, error.message)
+  end
+
+  def test_method_map_backwards_compatibility
+    # Test that register still works without optional parameters
+    map = JSONRPC3::MethodMap.new
+
+    map.register("add") do |params|
+      data = params.decode
+      data["a"] + data["b"]
+    end
+
+    # Should work normally
+    params = JSONRPC3.new_params({ "a" => 5, "b" => 3 })
+    result = map.call_method("add", params)
+    assert_equal 8, result
+
+    # Should have basic info
+    info_params = JSONRPC3.new_params("add")
+    info = map.call_method("$method", info_params)
+    assert_equal "add", info["name"]
   end
 
   def test_json_codec_single_message
