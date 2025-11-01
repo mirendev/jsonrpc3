@@ -13,19 +13,19 @@ func TestBatch_SimpleChain(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("createCounter", func(params Params) (any, error) {
+	serverRoot.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		counter := NewMethodMap()
 		count := 0
 		var mu sync.Mutex
 
-		counter.Register("increment", func(params Params) (any, error) {
+		counter.Register("increment", func(params Params, caller Caller) (any, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			count++
 			return count, nil
 		})
 
-		counter.Register("getValue", func(params Params) (any, error) {
+		counter.Register("getValue", func(params Params, caller Caller) (any, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			return count, nil
@@ -109,7 +109,7 @@ func TestBatch_MultipleChains(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("add", func(params Params) (any, error) {
+	serverRoot.Register("add", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, err
@@ -121,7 +121,7 @@ func TestBatch_MultipleChains(t *testing.T) {
 		return sum, nil
 	})
 
-	serverRoot.Register("multiply", func(params Params) (any, error) {
+	serverRoot.Register("multiply", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, err
@@ -216,7 +216,7 @@ func TestBatch_ErrorResponse(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("divide", func(params Params) (any, error) {
+	serverRoot.Register("divide", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, err
@@ -295,7 +295,7 @@ func TestBatch_GetResults(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("double", func(params Params) (any, error) {
+	serverRoot.Register("double", func(params Params, caller Caller) (any, error) {
 		var num int
 		if err := params.Decode(&num); err != nil {
 			return nil, err

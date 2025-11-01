@@ -5,7 +5,7 @@ type MethodInfo struct {
 	Name        string
 	Description string
 	Params      any // Can be map[string]string for named params or []string for positional params
-	handler     func(params Params) (any, error)
+	handler     func(params Params, caller Caller) (any, error)
 }
 
 // MethodMap is a simple Object implementation that dispatches methods to functions.
@@ -58,7 +58,7 @@ func NewMethodMap() *MethodMap {
 //	m.Register("add", addHandler,
 //	    WithDescription("Adds two numbers"),
 //	    WithParams(map[string]string{"a": "number", "b": "number"}))
-func (m *MethodMap) Register(method string, fn func(params Params) (any, error), opts ...RegisterOption) {
+func (m *MethodMap) Register(method string, fn func(params Params, caller Caller) (any, error), opts ...RegisterOption) {
 	info := &MethodInfo{
 		Name:    method,
 		handler: fn,
@@ -73,7 +73,7 @@ func (m *MethodMap) Register(method string, fn func(params Params) (any, error),
 
 // CallMethod implements the Object interface.
 // It automatically handles the $methods, $type, and $method introspection methods.
-func (m *MethodMap) CallMethod(method string, params Params) (any, error) {
+func (m *MethodMap) CallMethod(method string, params Params, caller Caller) (any, error) {
 	// Handle introspection methods
 	switch method {
 	case "$methods":
@@ -88,7 +88,7 @@ func (m *MethodMap) CallMethod(method string, params Params) (any, error) {
 	if !exists {
 		return nil, NewMethodNotFoundError(method)
 	}
-	return info.handler(params)
+	return info.handler(params, caller)
 }
 
 // getMethods returns a list of all method names supported by this object.

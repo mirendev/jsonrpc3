@@ -28,7 +28,6 @@ type HTTPClient struct {
 	httpClient  *http.Client
 	contentType string
 	nextID      atomic.Int64
-	sessionID   atomic.Value // stores string
 
 	// Callback support (lazily initialized)
 	sessionMu sync.Mutex
@@ -44,20 +43,20 @@ func NewHTTPClient(url string, httpClient *http.Client) *HTTPClient {
 		httpClient = http.DefaultClient
 	}
 
-	client := &HTTPClient{
+	return &HTTPClient{
 		url:         url,
 		httpClient:  httpClient,
 		contentType: MimeTypeCBOR,
 	}
-	client.sessionID.Store("")
-
-	return client
 }
 
 // SessionID returns the current session ID, or empty string if none.
 func (c *HTTPClient) SessionID() string {
-	if val := c.sessionID.Load(); val != nil {
-		return val.(string)
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	if c.session != nil {
+		return c.session.ID()
 	}
 	return ""
 }
@@ -65,7 +64,22 @@ func (c *HTTPClient) SessionID() string {
 // SetSessionID sets the session ID to use for subsequent requests.
 // Use empty string to clear the session ID.
 func (c *HTTPClient) SetSessionID(sessionID string) {
-	c.sessionID.Store(sessionID)
+	c.sessionMu.Lock()
+	defer c.sessionMu.Unlock()
+
+	if sessionID == "" {
+		// Clear session
+		c.session = nil
+		c.handler = nil
+		return
+	}
+
+	// If session doesn't exist or has different ID, create new one
+	if c.session == nil || c.session.ID() != sessionID {
+		c.session = NewSessionWithID(sessionID)
+		// HTTP client can receive callbacks via SSE, so pass client as caller
+		c.handler = NewHandler(c.session, nil, c, nil)
+	}
 }
 
 // DeleteSession deletes the current session on the server.
@@ -117,7 +131,8 @@ func (c *HTTPClient) GetSession() *Session {
 
 	if c.session == nil {
 		c.session = NewSession()
-		c.handler = NewHandler(c.session, nil, nil)
+		// HTTP client can receive callbacks via SSE, so pass client as caller
+		c.handler = NewHandler(c.session, nil, c, nil)
 	}
 
 	return c.session

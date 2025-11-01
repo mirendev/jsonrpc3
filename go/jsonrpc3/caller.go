@@ -54,3 +54,41 @@ type Caller interface {
 	// Close closes the connection gracefully.
 	Close() error
 }
+
+// noOpCaller is a Caller implementation that returns errors for all operations.
+// Used in contexts where callbacks are not supported (e.g., HTTP requests without SSE).
+type noOpCaller struct{}
+
+// NewNoOpCaller creates a Caller that rejects all callback operations.
+func NewNoOpCaller() Caller {
+	return &noOpCaller{}
+}
+
+func (n *noOpCaller) Call(method string, params any, opts ...CallOption) (Value, error) {
+	return Value{}, NewError(-32000, "Callbacks not supported in this context", nil)
+}
+
+func (n *noOpCaller) Notify(method string, params any, opts ...CallOption) error {
+	return NewError(-32000, "Callbacks not supported in this context", nil)
+}
+
+func (n *noOpCaller) CallBatch(requests []BatchRequest) (*BatchResults, error) {
+	return nil, NewError(-32000, "Callbacks not supported in this context", nil)
+}
+
+func (n *noOpCaller) RegisterObject(ref string, obj Object) Reference {
+	// Return an invalid reference
+	return Reference{}
+}
+
+func (n *noOpCaller) UnregisterObject(ref Reference) {
+	// No-op
+}
+
+func (n *noOpCaller) GetSession() *Session {
+	return nil
+}
+
+func (n *noOpCaller) Close() error {
+	return nil
+}

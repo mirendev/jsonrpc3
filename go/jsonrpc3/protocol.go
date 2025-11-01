@@ -59,7 +59,7 @@ type MimeTypesResult struct {
 }
 
 // CallMethod implements the Object interface for protocol methods.
-func (h *ProtocolHandler) CallMethod(method string, params Params) (any, error) {
+func (h *ProtocolHandler) CallMethod(method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "dispose":
 		return h.handleDispose(params)

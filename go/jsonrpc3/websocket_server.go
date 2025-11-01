@@ -97,17 +97,22 @@ type WebSocketConn struct {
 // newWebSocketConn creates a new WebSocket connection handler.
 func newWebSocketConn(conn *websocket.Conn, rootObject Object, contentType string, mimeTypes []string) *WebSocketConn {
 	session := NewSession()
-	handler := NewHandler(session, rootObject, mimeTypes)
 
-	return &WebSocketConn{
+	// Create connection first (without handler)
+	wsConn := &WebSocketConn{
 		conn:        conn,
 		session:     session,
-		handler:     handler,
+		handler:     nil, // Will be set below
 		contentType: contentType,
 		refPrefix:   generateConnID(),
 		writeChan:   make(chan []byte, 100),
 		closeChan:   make(chan struct{}),
 	}
+
+	// Now create handler with connection as caller
+	wsConn.handler = NewHandler(session, rootObject, wsConn, mimeTypes)
+
+	return wsConn
 }
 
 // handle starts the read and write loops for this connection.
@@ -122,10 +127,16 @@ func (c *WebSocketConn) handle() {
 
 // Call invokes a method on the client and waits for the response.
 // This allows the server to initiate calls to the client.
-func (c *WebSocketConn) Call(ref string, method string, params any) (Value, error) {
+func (c *WebSocketConn) Call(method string, params any, opts ...CallOption) (Value, error) {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return Value{}, err
+	}
+
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
 	}
 
 	// Generate request ID
@@ -138,8 +149,8 @@ func (c *WebSocketConn) Call(ref string, method string, params any) (Value, erro
 		return Value{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
-	if ref != "" {
-		req.Ref = ref
+	if options.ref != nil {
+		req.Ref = options.ref.Ref
 	}
 
 	// Create response channel
@@ -184,10 +195,16 @@ func (c *WebSocketConn) Call(ref string, method string, params any) (Value, erro
 }
 
 // Notify sends a notification to the client (no response expected).
-func (c *WebSocketConn) Notify(ref string, method string, params any) error {
+func (c *WebSocketConn) Notify(method string, params any, opts ...CallOption) error {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
 		return err
+	}
+
+	// Apply options
+	var options callOptions
+	for _, opt := range opts {
+		opt.apply(&options)
 	}
 
 	// Create notification (nil ID)
@@ -196,8 +213,8 @@ func (c *WebSocketConn) Notify(ref string, method string, params any) error {
 		return fmt.Errorf("failed to create notification: %w", err)
 	}
 
-	if ref != "" {
-		req.Ref = ref
+	if options.ref != nil {
+		req.Ref = options.ref.Ref
 	}
 
 	// Encode and send
@@ -215,6 +232,119 @@ func (c *WebSocketConn) Notify(ref string, method string, params any) error {
 	case <-c.closeChan:
 		return fmt.Errorf("connection closed")
 	}
+}
+
+// CallBatch sends a batch of requests and waits for all responses.
+func (c *WebSocketConn) CallBatch(batchReqs []BatchRequest) (*BatchResults, error) {
+	// Check if connection is closed
+	if err := c.getError(); err != nil {
+		return nil, err
+	}
+
+	// Check if batch is empty
+	if len(batchReqs) == 0 {
+		return &BatchResults{responses: []*Response{}}, nil
+	}
+
+	// Convert BatchRequest to Request objects
+	requests := make([]*Request, len(batchReqs))
+	for i, breq := range batchReqs {
+		var id any
+		if !breq.IsNotification {
+			id = float64(c.nextID.Add(1))
+		}
+
+		req, err := NewRequestWithFormat(breq.Method, breq.Params, id, c.contentType)
+		if err != nil {
+			return nil, fmt.Errorf("failed to create request %d: %w", i, err)
+		}
+
+		if breq.Ref != "" {
+			req.Ref = breq.Ref
+		}
+
+		requests[i] = req
+	}
+
+	// Create response channels for each request with an ID
+	responseChans := make(map[any]chan *Response)
+	for _, req := range requests {
+		if req.ID != nil {
+			respChan := make(chan *Response, 1)
+			responseChans[req.ID] = respChan
+			c.pendingReqs.Store(req.ID, respChan)
+		}
+	}
+
+	// Clean up pending requests when done
+	defer func() {
+		for id := range responseChans {
+			c.pendingReqs.Delete(id)
+		}
+	}()
+
+	// Create batch message
+	msgSet := &MessageSet{
+		Messages: make([]Message, len(requests)),
+		IsBatch:  true,
+	}
+	for i, req := range requests {
+		msgSet.Messages[i] = Message{
+			JSONRPC: req.JSONRPC,
+			Method:  req.Method,
+			Params:  req.Params,
+			ID:      req.ID,
+			Ref:     req.Ref,
+		}
+	}
+
+	// Encode and send batch
+	codec := GetCodec(c.contentType)
+	reqData, err := codec.MarshalMessages(*msgSet)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode batch: %w", err)
+	}
+
+	// Send via write channel
+	select {
+	case c.writeChan <- reqData:
+		// Successfully queued for sending
+	case <-c.closeChan:
+		return nil, fmt.Errorf("connection closed")
+	}
+
+	// Wait for all responses with timeout
+	responses := make([]*Response, len(requests))
+	responsesReceived := 0
+
+	// Collect responses
+	for i, req := range requests {
+		// Skip notifications (they don't have responses)
+		if req.ID == nil {
+			responses[i] = nil
+			responsesReceived++
+			continue
+		}
+
+		respChan, ok := responseChans[req.ID]
+		if !ok {
+			return nil, fmt.Errorf("missing response channel for request %v", req.ID)
+		}
+
+		select {
+		case resp := <-respChan:
+			responses[i] = resp
+			responsesReceived++
+
+		case <-time.After(30 * time.Second):
+			return nil, fmt.Errorf("timeout waiting for response %d", i)
+
+		case <-c.closeChan:
+			return nil, fmt.Errorf("connection closed while waiting for responses")
+		}
+	}
+
+	return &BatchResults{responses: responses}, nil
 }
 
 // RegisterObject registers a server object that the client can call.

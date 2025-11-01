@@ -69,19 +69,18 @@ func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...Clie
 	// Create context for lifecycle management
 	ctx, cancel := context.WithCancel(context.Background())
 
-	// Create session and handler
+	// Create session
 	session := NewSession()
-	mimeTypes := []string{options.contentType}
-	handler := NewHandler(session, rootObject, mimeTypes)
 
 	// Generate random connection ID prefix
 	refPrefix := generateConnID()
 
+	// Create peer first (without handler)
 	peer := &Peer{
 		reader:      reader,
 		writer:      writer,
 		session:     session,
-		handler:     handler,
+		handler:     nil, // Will be set below
 		rootObject:  rootObject,
 		contentType: options.contentType,
 		refPrefix:   refPrefix,
@@ -90,6 +89,10 @@ func NewPeer(reader io.Reader, writer io.Writer, rootObject Object, opts ...Clie
 		ctx:         ctx,
 		cancel:      cancel,
 	}
+
+	// Now create handler with peer as caller
+	mimeTypes := []string{options.contentType}
+	peer.handler = NewHandler(session, rootObject, peer, mimeTypes)
 
 	// Start read and write loops
 	go peer.readLoop()

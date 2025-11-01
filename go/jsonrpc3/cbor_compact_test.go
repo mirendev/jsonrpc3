@@ -252,10 +252,10 @@ func TestEncodeBatchResponse_CompactCBOR(t *testing.T) {
 func TestRoundTrip_CompactCBOR(t *testing.T) {
 	session := NewSession()
 	root := NewMethodMap()
-	_ = NewHandler(session, root, []string{"application/cbor; format=compact"})
+	_ = NewHandler(session, root, NewNoOpCaller(), []string{"application/cbor; format=compact"})
 
 	// Register a method
-	root.Register("add", func(params Params) (any, error) {
+	root.Register("add", func(params Params, caller Caller) (any, error) {
 		var numbers []int
 		if err := params.Decode(&numbers); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -286,7 +286,7 @@ func TestRoundTrip_CompactCBOR(t *testing.T) {
 
 	// Process request
 	params := NewParamsWithFormat(decodedReq.Params, "application/cbor; format=compact")
-	result, err := root.CallMethod(decodedReq.Method, params)
+	result, err := root.CallMethod(decodedReq.Method, params, nil)
 	require.NoError(t, err, "CallMethod() should not error")
 
 	assert.Equal(t, 30, result)

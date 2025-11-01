@@ -145,17 +145,16 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 
 	// Create client
 	session := NewSession()
-	mimeTypes := []string{acceptedContentType}
-	handler := NewHandler(session, rootObject, mimeTypes)
 
 	// Generate random connection ID prefix
 	refPrefix := generateConnID()
 
+	// Create client first (without handler)
 	client := &WebSocketClient{
 		url:         url,
 		conn:        conn,
 		session:     session,
-		handler:     handler,
+		handler:     nil, // Will be set below
 		rootObject:  rootObject,
 		contentType: acceptedContentType,
 		refPrefix:   refPrefix,
@@ -164,6 +163,10 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 		ctx:         ctx,
 		cancel:      cancel,
 	}
+
+	// Now create handler with client as caller
+	mimeTypes := []string{acceptedContentType}
+	client.handler = NewHandler(session, rootObject, client, mimeTypes)
 
 	// Start read and write loops
 	go client.readLoop()

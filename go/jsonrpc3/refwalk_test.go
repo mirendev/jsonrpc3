@@ -10,7 +10,7 @@ type TestCounter struct {
 	Value int
 }
 
-func (c *TestCounter) CallMethod(method string, params Params) (any, error) {
+func (c *TestCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.Value++
@@ -28,7 +28,7 @@ func (c *TestCounter) CallMethod(method string, params Params) (any, error) {
 func TestProcessResult_Primitive(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	tests := []struct {
 		name   string
@@ -54,7 +54,7 @@ func TestProcessResult_Primitive(t *testing.T) {
 func TestProcessResult_Object(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	counter := &TestCounter{Value: 10}
 	processed := processResult(h, counter)
@@ -84,7 +84,7 @@ func TestProcessResult_Object(t *testing.T) {
 func TestProcessResult_SliceWithObject(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	counter1 := &TestCounter{Value: 1}
 	counter2 := &TestCounter{Value: 2}
@@ -136,7 +136,7 @@ func TestProcessResult_SliceWithObject(t *testing.T) {
 func TestProcessResult_MapWithObject(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	counter := &TestCounter{Value: 5}
 
@@ -175,7 +175,7 @@ func TestProcessResult_MapWithObject(t *testing.T) {
 func TestProcessResult_NestedStructures(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	counter1 := &TestCounter{Value: 1}
 	counter2 := &TestCounter{Value: 2}
@@ -237,7 +237,7 @@ func TestProcessResult_NestedStructures(t *testing.T) {
 func TestProcessResult_ExistingReference(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	// Create an existing Reference
 	existingRef := NewReference("existing-ref")
@@ -267,10 +267,10 @@ func TestProcessResult_ExistingReference(t *testing.T) {
 func TestHandler_ObjectIntegration(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	// Register a method that returns an Object
-	root.Register("create_counter", func(params Params) (any, error) {
+	root.Register("create_counter", func(params Params, caller Caller) (any, error) {
 		var initial int
 		if params != nil {
 			params.Decode(&initial)
@@ -322,10 +322,10 @@ func TestHandler_ObjectIntegration(t *testing.T) {
 func TestHandler_ObjectReturningObject(t *testing.T) {
 	s := NewSession()
 	root := NewMethodMap()
-	h := NewHandler(s, root, nil)
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	// Register a method that returns multiple Objects
-	root.Register("create_pair", func(params Params) (any, error) {
+	root.Register("create_pair", func(params Params, caller Caller) (any, error) {
 		return map[string]any{
 			"counter1": &TestCounter{Value: 1},
 			"counter2": &TestCounter{Value: 2},

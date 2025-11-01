@@ -14,7 +14,7 @@ type exampleObject struct {
 	name string
 }
 
-func (e *exampleObject) CallMethod(method string, params jsonrpc3.Params) (any, error) {
+func (e *exampleObject) CallMethod(method string, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 	return nil, jsonrpc3.NewMethodNotFoundError(method)
 }
 
@@ -22,10 +22,10 @@ func (e *exampleObject) CallMethod(method string, params jsonrpc3.Params) (any, 
 func Example_basicMethod() {
 	session := jsonrpc3.NewSession()
 	root := jsonrpc3.NewMethodMap()
-	handler := jsonrpc3.NewHandler(session, root, nil)
+	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
 	// Register a simple echo method
-	root.Register("echo", func(params jsonrpc3.Params) (any, error) {
+	root.Register("echo", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var message string
 		if err := params.Decode(&message); err != nil {
 			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
@@ -49,10 +49,10 @@ func Example_basicMethod() {
 func Example_notification() {
 	session := jsonrpc3.NewSession()
 	root := jsonrpc3.NewMethodMap()
-	handler := jsonrpc3.NewHandler(session, root, nil)
+	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
 	called := false
-	root.Register("log", func(params jsonrpc3.Params) (any, error) {
+	root.Register("log", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		called = true
 		var message string
 		params.Decode(&message)
@@ -78,9 +78,9 @@ func Example_notification() {
 func Example_batchRequests() {
 	session := jsonrpc3.NewSession()
 	root := jsonrpc3.NewMethodMap()
-	handler := jsonrpc3.NewHandler(session, root, nil)
+	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
-	root.Register("add", func(params jsonrpc3.Params) (any, error) {
+	root.Register("add", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var numbers []int
 		if err := params.Decode(&numbers); err != nil {
 			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
@@ -115,9 +115,9 @@ func Example_batchRequests() {
 func Example_errorHandling() {
 	session := jsonrpc3.NewSession()
 	root := jsonrpc3.NewMethodMap()
-	handler := jsonrpc3.NewHandler(session, root, nil)
+	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
-	root.Register("divide", func(params jsonrpc3.Params) (any, error) {
+	root.Register("divide", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var nums struct {
 			A float64 `json:"a"`
 			B float64 `json:"b"`
@@ -155,7 +155,7 @@ func Example_errorHandling() {
 func Example_protocolMethods() {
 	session := jsonrpc3.NewSession()
 	root := jsonrpc3.NewMethodMap()
-	handler := jsonrpc3.NewHandler(session, root, []string{"application/json"})
+	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), []string{"application/json"})
 
 	// Add some test references
 	session.AddLocalRef("obj-1", &exampleObject{name: "test-object"})
@@ -194,9 +194,9 @@ func Example_protocolMethods() {
 func Example_versionNegotiation() {
 	session := jsonrpc3.NewSession()
 	root := jsonrpc3.NewMethodMap()
-	handler := jsonrpc3.NewHandler(session, root, nil)
+	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
-	root.Register("test", func(params jsonrpc3.Params) (any, error) {
+	root.Register("test", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		return "ok", nil
 	})
 
@@ -261,7 +261,7 @@ func Example_message() {
 func Example_webSocket() {
 	// Server setup
 	serverRoot := jsonrpc3.NewMethodMap()
-	serverRoot.Register("add", func(params jsonrpc3.Params) (any, error) {
+	serverRoot.Register("add", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
@@ -296,7 +296,7 @@ func Example_webSocket() {
 func Example_webSocketBidirectional() {
 	// Server with custom handler to capture connection
 	serverRoot := jsonrpc3.NewMethodMap()
-	serverRoot.Register("ping", func(params jsonrpc3.Params) (any, error) {
+	serverRoot.Register("ping", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		return "pong", nil
 	})
 
@@ -313,7 +313,7 @@ func Example_webSocketBidirectional() {
 
 	// Client with methods that server can call
 	clientRoot := jsonrpc3.NewMethodMap()
-	clientRoot.Register("clientEcho", func(params jsonrpc3.Params) (any, error) {
+	clientRoot.Register("clientEcho", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var msg string
 		params.Decode(&msg)
 		return "client received: " + msg, nil
@@ -354,7 +354,7 @@ func Example_webTransport() {
 	// Server setup (illustrative)
 	_ = func() {
 		serverRoot := jsonrpc3.NewMethodMap()
-		serverRoot.Register("add", func(params jsonrpc3.Params) (any, error) {
+		serverRoot.Register("add", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 			var nums []int
 			params.Decode(&nums)
 			sum := 0

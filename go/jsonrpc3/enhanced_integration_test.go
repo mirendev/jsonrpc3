@@ -16,7 +16,7 @@ func TestEnhancedIntegration_DateTime(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns datetime
-	root.Register("getCurrentTime", func(params Params) (any, error) {
+	root.Register("getCurrentTime", func(params Params, caller Caller) (any, error) {
 		testTime := time.Date(2025, 12, 25, 10, 0, 0, 0, time.UTC)
 		return NewDateTime(testTime), nil
 	})
@@ -47,7 +47,7 @@ func TestEnhancedIntegration_Bytes(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns binary data
-	root.Register("getBinaryData", func(params Params) (any, error) {
+	root.Register("getBinaryData", func(params Params, caller Caller) (any, error) {
 		data := []byte{1, 2, 3, 4, 5}
 		return NewBytes(data), nil
 	})
@@ -76,7 +76,7 @@ func TestEnhancedIntegration_BigInt(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns a large number
-	root.Register("getLargeNumber", func(params Params) (any, error) {
+	root.Register("getLargeNumber", func(params Params, caller Caller) (any, error) {
 		// Return a moderately large number
 		n, _ := new(big.Int).SetString("123456789012345678901234567890", 10)
 		return NewBigInt(n), nil
@@ -119,7 +119,7 @@ func TestEnhancedIntegration_RegExp(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns a regexp pattern
-	root.Register("getEmailPattern", func(params Params) (any, error) {
+	root.Register("getEmailPattern", func(params Params, caller Caller) (any, error) {
 		// Email validation pattern
 		pattern := `^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`
 		re := regexp.MustCompile(pattern)
@@ -156,7 +156,7 @@ func TestEnhancedIntegration_Mixed(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns multiple enhanced types
-	root.Register("getSystemInfo", func(params Params) (any, error) {
+	root.Register("getSystemInfo", func(params Params, caller Caller) (any, error) {
 		logPattern, _ := NewRegExpFromPattern(".*ERROR.*", "i")
 		return map[string]any{
 			"timestamp":  NewDateTime(time.Now()),
@@ -191,11 +191,11 @@ func TestEnhancedIntegration_Mixed(t *testing.T) {
 func TestEnhancedIntegration_Batch(t *testing.T) {
 	root := NewMethodMap()
 
-	root.Register("getCurrentTime", func(params Params) (any, error) {
+	root.Register("getCurrentTime", func(params Params, caller Caller) (any, error) {
 		return NewDateTime(time.Date(2025, 10, 27, 12, 0, 0, 0, time.UTC)), nil
 	})
 
-	root.Register("getRandomBytes", func(params Params) (any, error) {
+	root.Register("getRandomBytes", func(params Params, caller Caller) (any, error) {
 		return NewBytes([]byte{1, 2, 3, 4, 5}), nil
 	})
 
@@ -234,7 +234,7 @@ func TestEnhancedIntegration_Batch(t *testing.T) {
 func TestEnhancedIntegration_CBOR(t *testing.T) {
 	root := NewMethodMap()
 
-	root.Register("getBinaryData", func(params Params) (any, error) {
+	root.Register("getBinaryData", func(params Params, caller Caller) (any, error) {
 		data := []byte{0xFF, 0xFE, 0xFD, 0xFC}
 		return NewBytes(data), nil
 	})
@@ -264,7 +264,7 @@ func TestEnhancedIntegration_CustomType(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns custom enhanced type
-	root.Register("getCustomData", func(params Params) (any, error) {
+	root.Register("getCustomData", func(params Params, caller Caller) (any, error) {
 		return map[string]any{
 			"$type": "myapp.customtype",
 			"value": "custom data",

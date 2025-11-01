@@ -13,7 +13,7 @@ import (
 // do NOT get a session ID and do NOT store a session
 func TestSessionOptimization_StatelessRequest(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("add", func(params Params) (any, error) {
+	root.Register("add", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -53,7 +53,7 @@ func TestSessionOptimization_StatelessRequest(t *testing.T) {
 // object references DO get a session ID and DO store the session
 func TestSessionOptimization_StatefulRequest(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("createCounter", func(params Params) (any, error) {
+	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		return &testCounter{value: 0}, nil
 	})
 
@@ -89,10 +89,10 @@ func TestSessionOptimization_StatefulRequest(t *testing.T) {
 // continue to return their session ID even if no new refs are created
 func TestSessionOptimization_ExistingSession(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("createCounter", func(params Params) (any, error) {
+	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		return &testCounter{value: 0}, nil
 	})
-	root.Register("echo", func(params Params) (any, error) {
+	root.Register("echo", func(params Params, caller Caller) (any, error) {
 		var msg string
 		params.Decode(&msg)
 		return msg, nil
@@ -132,7 +132,7 @@ func TestSessionOptimization_ExistingSession(t *testing.T) {
 // TestSessionDeletion verifies that DELETE method deletes sessions
 func TestSessionDeletion(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("createCounter", func(params Params) (any, error) {
+	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		return &testCounter{value: 0}, nil
 	})
 
@@ -211,7 +211,7 @@ func TestSessionDeletion_NonExistentSession(t *testing.T) {
 // TestHTTPClient_DeleteSession verifies client can delete sessions
 func TestHTTPClient_DeleteSession(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("createCounter", func(params Params) (any, error) {
+	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		return &testCounter{value: 0}, nil
 	})
 

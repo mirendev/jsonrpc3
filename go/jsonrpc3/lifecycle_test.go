@@ -15,7 +15,7 @@ type bothLifecycleCounter struct {
 	closeCount   int
 }
 
-func (c *bothLifecycleCounter) CallMethod(method string, params Params) (any, error) {
+func (c *bothLifecycleCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
 	return nil, NewMethodNotFoundError(method)
 }
 
@@ -36,7 +36,7 @@ type disposableCounter struct {
 	disposeErrors int
 }
 
-func (c *disposableCounter) CallMethod(method string, params Params) (any, error) {
+func (c *disposableCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.value++
@@ -60,7 +60,7 @@ type closeableCounter struct {
 	closeErrors int
 }
 
-func (c *closeableCounter) CallMethod(method string, params Params) (any, error) {
+func (c *closeableCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.value++
@@ -153,7 +153,7 @@ func TestLifecycle_HTTPDelete(t *testing.T) {
 	root := NewMethodMap()
 	counter := &disposableCounter{value: 0}
 
-	root.Register("createCounter", func(params Params) (any, error) {
+	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		return counter, nil
 	})
 
@@ -191,7 +191,7 @@ func TestLifecycle_SessionCleanup(t *testing.T) {
 	root := NewMethodMap()
 	counter := &closeableCounter{value: 0}
 
-	root.Register("createCounter", func(params Params) (any, error) {
+	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
 		return counter, nil
 	})
 
@@ -243,11 +243,11 @@ func TestLifecycle_FullIntegration(t *testing.T) {
 	disposeCounter := &disposableCounter{}
 	closeCounter := &closeableCounter{}
 
-	root.Register("createDisposable", func(params Params) (any, error) {
+	root.Register("createDisposable", func(params Params, caller Caller) (any, error) {
 		return disposeCounter, nil
 	})
 
-	root.Register("createCloseable", func(params Params) (any, error) {
+	root.Register("createCloseable", func(params Params, caller Caller) (any, error) {
 		return closeCounter, nil
 	})
 

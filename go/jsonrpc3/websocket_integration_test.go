@@ -21,7 +21,7 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 
 	// Server methods
 	serverRoot := NewMethodMap()
-	serverRoot.Register("subscribe", func(params Params) (any, error) {
+	serverRoot.Register("subscribe", func(params Params, caller Caller) (any, error) {
 		var p struct {
 			Topic    string    `json:"topic"`
 			Callback Reference `json:"callback"`
@@ -39,16 +39,16 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 
 			if sc != nil {
 				// Send notification to client callback
-				sc.Notify(p.Callback.Ref, "onUpdate", map[string]any{
+				sc.Notify("onUpdate", map[string]any{
 					"topic":   p.Topic,
 					"message": "Update 1",
-				})
+				}, ToRef(p.Callback))
 
 				time.Sleep(50 * time.Millisecond)
-				sc.Notify(p.Callback.Ref, "onUpdate", map[string]any{
+				sc.Notify("onUpdate", map[string]any{
 					"topic":   p.Topic,
 					"message": "Update 2",
-				})
+				}, ToRef(p.Callback))
 			}
 		}()
 
@@ -92,7 +92,7 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 	var updateMu sync.Mutex
 
 	callbackObj := NewMethodMap()
-	callbackObj.Register("onUpdate", func(params Params) (any, error) {
+	callbackObj.Register("onUpdate", func(params Params, caller Caller) (any, error) {
 		var data map[string]string
 		if err := params.Decode(&data); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -141,7 +141,7 @@ func TestWebSocketIntegration_ConcurrentBidirectional(t *testing.T) {
 
 	// Server methods
 	serverRoot := NewMethodMap()
-	serverRoot.Register("serverEcho", func(params Params) (any, error) {
+	serverRoot.Register("serverEcho", func(params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -180,7 +180,7 @@ func TestWebSocketIntegration_ConcurrentBidirectional(t *testing.T) {
 
 	// Client methods
 	clientRoot := NewMethodMap()
-	clientRoot.Register("clientEcho", func(params Params) (any, error) {
+	clientRoot.Register("clientEcho", func(params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -224,7 +224,7 @@ func TestWebSocketIntegration_ConcurrentBidirectional(t *testing.T) {
 			connMu.Unlock()
 
 			if sc != nil {
-				val, err := sc.Call("", "clientEcho", "test")
+				val, err := sc.Call("clientEcho", "test")
 				assert.NoError(t, err)
 				var result string
 				err = val.Decode(&result)
@@ -247,10 +247,10 @@ func TestWebSocketIntegration_ObjectLifecycle(t *testing.T) {
 
 	// Server root methods
 	serverRoot := NewMethodMap()
-	serverRoot.Register("createObject", func(params Params) (any, error) {
+	serverRoot.Register("createObject", func(params Params, caller Caller) (any, error) {
 		// Create a new object
 		obj := NewMethodMap()
-		obj.Register("getValue", func(params Params) (any, error) {
+		obj.Register("getValue", func(params Params, caller Caller) (any, error) {
 			return "object value", nil
 		})
 
@@ -323,9 +323,9 @@ func TestWebSocketIntegration_ObjectLifecycle(t *testing.T) {
 // TestWebSocketIntegration_ProtocolMethods tests $rpc protocol methods over WebSocket
 func TestWebSocketIntegration_ProtocolMethods(t *testing.T) {
 	serverRoot := NewMethodMap()
-	serverRoot.Register("createObject", func(params Params) (any, error) {
+	serverRoot.Register("createObject", func(params Params, caller Caller) (any, error) {
 		obj := NewMethodMap()
-		obj.Register("test", func(params Params) (any, error) {
+		obj.Register("test", func(params Params, caller Caller) (any, error) {
 			return "ok", nil
 		})
 		return obj, nil
@@ -376,7 +376,7 @@ func TestWebSocketIntegration_ProtocolMethods(t *testing.T) {
 // TestWebSocketIntegration_ReconnectionBehavior tests that sessions don't persist across reconnections
 func TestWebSocketIntegration_ReconnectionBehavior(t *testing.T) {
 	serverRoot := NewMethodMap()
-	serverRoot.Register("test", func(params Params) (any, error) {
+	serverRoot.Register("test", func(params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 
@@ -415,7 +415,7 @@ func TestWebSocketIntegration_ReconnectionBehavior(t *testing.T) {
 // TestWebSocketIntegration_MultipleClients tests multiple clients connecting to same server
 func TestWebSocketIntegration_MultipleClients(t *testing.T) {
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())

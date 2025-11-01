@@ -385,7 +385,8 @@ type Params interface {
 // This is the core abstraction for both top-level handlers and references.
 type Object interface {
 	// CallMethod invokes a method on this object.
-	CallMethod(method string, params Params) (any, error)
+	// The caller parameter allows methods to make callbacks on the same connection.
+	CallMethod(method string, params Params, caller Caller) (any, error)
 }
 
 // jsonParams implements Params for JSON-encoded parameters.

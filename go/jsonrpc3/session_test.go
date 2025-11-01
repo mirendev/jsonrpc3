@@ -11,7 +11,7 @@ type simpleObject struct {
 	value any
 }
 
-func (s *simpleObject) CallMethod(method string, params Params) (any, error) {
+func (s *simpleObject) CallMethod(method string, params Params, caller Caller) (any, error) {
 	return nil, NewMethodNotFoundError(method)
 }
 

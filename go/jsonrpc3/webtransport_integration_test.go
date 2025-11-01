@@ -31,7 +31,7 @@ func TestWebTransportIntegration_BasicCall(t *testing.T) {
 
 	// Server methods
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -39,7 +39,7 @@ func TestWebTransportIntegration_BasicCall(t *testing.T) {
 		return msg, nil
 	})
 
-	serverRoot.Register("add", func(params Params) (any, error) {
+	serverRoot.Register("add", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -99,7 +99,7 @@ func TestWebTransportIntegration_BidirectionalCallbacks(t *testing.T) {
 
 	// Server methods
 	serverRoot := NewMethodMap()
-	serverRoot.Register("subscribe", func(params Params) (any, error) {
+	serverRoot.Register("subscribe", func(params Params, caller Caller) (any, error) {
 		var p struct {
 			Topic    string         `json:"topic"`
 			Callback Reference `json:"callback"`
@@ -156,7 +156,7 @@ func TestWebTransportIntegration_BidirectionalCallbacks(t *testing.T) {
 	var updates []string
 	var updateMu sync.Mutex
 
-	callbackObj.Register("onUpdate", func(params Params) (any, error) {
+	callbackObj.Register("onUpdate", func(params Params, caller Caller) (any, error) {
 		var data map[string]string
 		params.Decode(&data)
 		updateMu.Lock()
@@ -207,7 +207,7 @@ func TestWebTransportIntegration_ConcurrentCalls(t *testing.T) {
 	serverRoot := NewMethodMap()
 	var callCount atomic.Int32
 
-	serverRoot.Register("increment", func(params Params) (any, error) {
+	serverRoot.Register("increment", func(params Params, caller Caller) (any, error) {
 		count := callCount.Add(1)
 		time.Sleep(10 * time.Millisecond) // Simulate work
 		return count, nil
@@ -262,7 +262,7 @@ func TestWebTransportIntegration_ErrorHandling(t *testing.T) {
 	}
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("divide", func(params Params) (any, error) {
+	serverRoot.Register("divide", func(params Params, caller Caller) (any, error) {
 		var nums struct {
 			A float64 `json:"a"`
 			B float64 `json:"b"`
@@ -317,7 +317,7 @@ func TestWebTransportIntegration_Notifications(t *testing.T) {
 
 	var notifCount atomic.Int32
 	serverRoot := NewMethodMap()
-	serverRoot.Register("log", func(params Params) (any, error) {
+	serverRoot.Register("log", func(params Params, caller Caller) (any, error) {
 		notifCount.Add(1)
 		return nil, nil
 	})
@@ -358,7 +358,7 @@ func TestWebTransportIntegration_CBOR(t *testing.T) {
 	}
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var data map[string]any
 		params.Decode(&data)
 		return data, nil
@@ -477,7 +477,7 @@ func TestWebTransportIntegration_Documentation(t *testing.T) {
 	// Example of how to create a WebTransport server
 	_ = func() error {
 		root := NewMethodMap()
-		root.Register("add", func(params Params) (any, error) {
+		root.Register("add", func(params Params, caller Caller) (any, error) {
 			var nums []int
 			if err := params.Decode(&nums); err != nil {
 				return nil, NewInvalidParamsError(err.Error())

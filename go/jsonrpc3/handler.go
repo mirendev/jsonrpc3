@@ -11,12 +11,14 @@ type Handler struct {
 	session    *Session
 	protocol   *ProtocolHandler
 	rootObject Object // Handles top-level method calls
+	caller     Caller // Passed to methods for making callbacks
 	version    string // Default version for responses
 }
 
 // NewHandler creates a new handler for a session.
 // The rootObject handles top-level method calls (requests without a ref field).
-func NewHandler(session *Session, rootObject Object, mimeTypes []string) *Handler {
+// The caller is passed to methods to enable callbacks on the same connection.
+func NewHandler(session *Session, rootObject Object, caller Caller, mimeTypes []string) *Handler {
 	if mimeTypes == nil {
 		mimeTypes = []string{MimeTypeJSON}
 	}
@@ -24,6 +26,7 @@ func NewHandler(session *Session, rootObject Object, mimeTypes []string) *Handle
 		session:    session,
 		protocol:   NewProtocolHandler(session, mimeTypes),
 		rootObject: rootObject,
+		caller:     caller,
 		version:    Version30,
 	}
 }
@@ -44,7 +47,7 @@ func (h *Handler) HandleRequest(req *Request) *Response {
 	// Handle protocol methods (on $rpc reference)
 	if req.Ref == "$rpc" {
 		params := req.GetParams()
-		result, err := h.protocol.CallMethod(req.Method, params)
+		result, err := h.protocol.CallMethod(req.Method, params, h.caller)
 		if err != nil {
 			// Convert Go error to JSON-RPC error
 			var rpcErr *Error
@@ -92,7 +95,7 @@ func (h *Handler) handleMethod(req *Request) *Response {
 	}
 
 	params := req.GetParams()
-	result, err := h.rootObject.CallMethod(req.Method, params)
+	result, err := h.rootObject.CallMethod(req.Method, params, h.caller)
 	if err != nil {
 		// Convert Go error to JSON-RPC error
 		var rpcErr *Error
@@ -133,7 +136,7 @@ func (h *Handler) handleRefMethod(req *Request) *Response {
 	}
 
 	params := req.GetParams()
-	result, err := obj.CallMethod(req.Method, params)
+	result, err := obj.CallMethod(req.Method, params, h.caller)
 	if err != nil {
 		// Convert Go error to JSON-RPC error
 		var rpcErr *Error

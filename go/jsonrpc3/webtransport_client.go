@@ -103,14 +103,13 @@ func newWebTransportClient(url string, rootObject Object, options *clientOptions
 
 	// Create JSON-RPC session and handler
 	wtSession := NewSession()
-	mimeTypes := []string{acceptedContentType}
-	handler := NewHandler(wtSession, rootObject, mimeTypes)
 
+	// Create client first (without handler)
 	client := &WebTransportClient{
 		url:           url,
 		session:       session,
 		wtSession:     wtSession,
-		handler:       handler,
+		handler:       nil, // Will be set below
 		rootObject:    rootObject,
 		contentType:   acceptedContentType,
 		controlStream: controlStream,
@@ -120,6 +119,10 @@ func newWebTransportClient(url string, rootObject Object, options *clientOptions
 		ctx:           ctx,
 		cancel:        cancel,
 	}
+
+	// Now create handler with client as caller
+	mimeTypes := []string{acceptedContentType}
+	client.handler = NewHandler(wtSession, rootObject, client, mimeTypes)
 
 	// Start read and write loops
 	go client.readLoop()

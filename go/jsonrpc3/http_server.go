@@ -281,7 +281,8 @@ func (h *HTTPHandler) getOrCreateSession(sessionID string) (*Session, *Handler, 
 	// Create new session and handler (but don't store yet)
 	session := NewSession()
 	newSessionID := session.ID()
-	handler := NewHandler(session, h.rootObject, h.mimeTypes)
+	// HTTP requests without SSE don't support callbacks, so use no-op caller
+	handler := NewHandler(session, h.rootObject, NewNoOpCaller(), h.mimeTypes)
 	handler.SetVersion(h.version)
 
 	return session, handler, newSessionID, false

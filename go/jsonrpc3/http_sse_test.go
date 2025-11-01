@@ -15,7 +15,7 @@ type CallbackCounter struct {
 	Message string
 }
 
-func (c *CallbackCounter) CallMethod(method string, params Params) (any, error) {
+func (c *CallbackCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "onUpdate":
 		c.Called = true
@@ -37,9 +37,9 @@ func TestHTTPSSE_BasicCallback(t *testing.T) {
 	root := NewMethodMap()
 
 	// Server method that accepts a callback
-	root.Register("subscribe", func(params Params) (any, error) {
+	root.Register("subscribe", func(params Params, caller Caller) (any, error) {
 		var p struct {
-			Topic    string         `json:"topic"`
+			Topic    string    `json:"topic"`
 			Callback Reference `json:"callback"`
 		}
 		if err := params.Decode(&p); err != nil {
@@ -126,7 +126,7 @@ func TestHTTPSSE_ClientRefDetection(t *testing.T) {
 func TestHTTPSSE_MultipleCallbacks(t *testing.T) {
 	root := NewMethodMap()
 
-	root.Register("setup", func(params Params) (any, error) {
+	root.Register("setup", func(params Params, caller Caller) (any, error) {
 		var p struct {
 			OnEvent Reference `json:"onEvent"`
 			OnError Reference `json:"onError"`
@@ -185,11 +185,9 @@ func TestHTTPSSE_UnregisterCallback(t *testing.T) {
 
 // TestHTTPSSE_SessionPersistence tests that callbacks work with session persistence
 func TestHTTPSSE_SessionPersistence(t *testing.T) {
-	t.Skip("Skipping for now - session ID propagation needs more investigation")
-
 	root := NewMethodMap()
 
-	root.Register("register", func(params Params) (any, error) {
+	root.Register("register", func(params Params, caller Caller) (any, error) {
 		var p struct {
 			Callback Reference `json:"callback"`
 		}
@@ -245,7 +243,7 @@ func TestHTTPSSE_Format(t *testing.T) {
 		t.Run(format, func(t *testing.T) {
 			root := NewMethodMap()
 
-			root.Register("subscribe", func(params Params) (any, error) {
+			root.Register("subscribe", func(params Params, caller Caller) (any, error) {
 				var callback Reference
 				if err := params.Decode(&callback); err != nil {
 					return nil, NewInvalidParamsError(err.Error())
@@ -279,7 +277,7 @@ func TestHTTPSSE_Format(t *testing.T) {
 func TestHTTPSSE_ErrorHandling(t *testing.T) {
 	root := NewMethodMap()
 
-	root.Register("failWithCallback", func(params Params) (any, error) {
+	root.Register("failWithCallback", func(params Params, caller Caller) (any, error) {
 		var callback Reference
 		params.Decode(&callback)
 		return nil, &Error{

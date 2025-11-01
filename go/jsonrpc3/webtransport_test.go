@@ -86,10 +86,10 @@ func TestWebTransportConn_ObjectRegistration(t *testing.T) {
 
 	// Test object registration (without actual network connection)
 	session := NewSession()
-	handler := NewHandler(session, root, []string{"application/json"})
+	handler := NewHandler(session, root, NewNoOpCaller(), []string{"application/json"})
 
 	// Register a method
-	root.Register("test", func(params Params) (any, error) {
+	root.Register("test", func(params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 

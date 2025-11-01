@@ -15,7 +15,7 @@ import (
 func TestHTTPHandler_BasicCall(t *testing.T) {
 	// Create handler with a simple method
 	root := NewMethodMap()
-	root.Register("echo", func(params Params) (any, error) {
+	root.Register("echo", func(params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -97,7 +97,7 @@ func TestHTTPHandler_Notification(t *testing.T) {
 	root := NewMethodMap()
 
 	called := false
-	root.Register("log", func(params Params) (any, error) {
+	root.Register("log", func(params Params, caller Caller) (any, error) {
 		called = true
 		return nil, nil
 	})
@@ -121,7 +121,7 @@ func TestHTTPHandler_Notification(t *testing.T) {
 
 func TestHTTPHandler_BatchRequest(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("add", func(params Params) (any, error) {
+	root.Register("add", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -170,7 +170,7 @@ func TestHTTPHandler_BatchRequest(t *testing.T) {
 
 func TestHTTPHandler_BatchWithNotifications(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("test", func(params Params) (any, error) {
+	root.Register("test", func(params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 
@@ -217,7 +217,7 @@ func TestHTTPHandler_InvalidJSON(t *testing.T) {
 
 func TestHTTPHandler_CBOR(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("multiply", func(params Params) (any, error) {
+	root.Register("multiply", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -260,7 +260,7 @@ func TestHTTPHandler_CBOR(t *testing.T) {
 
 func TestHTTPHandler_DefaultContentType(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("test", func(params Params) (any, error) {
+	root.Register("test", func(params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 

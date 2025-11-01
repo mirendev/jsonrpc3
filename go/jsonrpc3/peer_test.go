@@ -23,7 +23,7 @@ func TestPeer_BasicCommunication(t *testing.T) {
 
 	// Create server root with echo method
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -63,7 +63,7 @@ func TestPeer_BidirectionalCalls(t *testing.T) {
 
 	// Peer 1 methods
 	peer1Root := NewMethodMap()
-	peer1Root.Register("greet", func(params Params) (any, error) {
+	peer1Root.Register("greet", func(params Params, caller Caller) (any, error) {
 		var name string
 		params.Decode(&name)
 		return "Hello, " + name, nil
@@ -71,7 +71,7 @@ func TestPeer_BidirectionalCalls(t *testing.T) {
 
 	// Peer 2 methods
 	peer2Root := NewMethodMap()
-	peer2Root.Register("add", func(params Params) (any, error) {
+	peer2Root.Register("add", func(params Params, caller Caller) (any, error) {
 		var nums []int
 		params.Decode(&nums)
 		sum := 0
@@ -119,7 +119,7 @@ func TestPeer_Notifications(t *testing.T) {
 
 	var notifCount atomic.Int32
 	serverRoot := NewMethodMap()
-	serverRoot.Register("log", func(params Params) (any, error) {
+	serverRoot.Register("log", func(params Params, caller Caller) (any, error) {
 		notifCount.Add(1)
 		return nil, nil
 	})
@@ -162,7 +162,7 @@ func TestPeer_ConcurrentRequests(t *testing.T) {
 
 	var callCount atomic.Int32
 	serverRoot := NewMethodMap()
-	serverRoot.Register("increment", func(params Params) (any, error) {
+	serverRoot.Register("increment", func(params Params, caller Caller) (any, error) {
 		count := callCount.Add(1)
 		time.Sleep(10 * time.Millisecond) // Simulate work
 		return count, nil
@@ -222,21 +222,21 @@ func TestPeer_ObjectRegistration(t *testing.T) {
 	var count int
 	var countMu sync.Mutex
 
-	counterObj.Register("increment", func(params Params) (any, error) {
+	counterObj.Register("increment", func(params Params, caller Caller) (any, error) {
 		countMu.Lock()
 		defer countMu.Unlock()
 		count++
 		return count, nil
 	})
 
-	counterObj.Register("getCount", func(params Params) (any, error) {
+	counterObj.Register("getCount", func(params Params, caller Caller) (any, error) {
 		countMu.Lock()
 		defer countMu.Unlock()
 		return count, nil
 	})
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("getCounter", func(params Params) (any, error) {
+	serverRoot.Register("getCounter", func(params Params, caller Caller) (any, error) {
 		return NewReference("counter-1"), nil
 	})
 
@@ -289,7 +289,7 @@ func TestPeer_ErrorHandling(t *testing.T) {
 	defer w2.Close()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("divide", func(params Params) (any, error) {
+	serverRoot.Register("divide", func(params Params, caller Caller) (any, error) {
 		var nums struct {
 			A float64 `json:"a"`
 			B float64 `json:"b"`
@@ -344,7 +344,7 @@ func TestPeer_CBOR(t *testing.T) {
 	defer w2.Close()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var data map[string]any
 		params.Decode(&data)
 		return data, nil
@@ -397,7 +397,7 @@ func TestPeer_JSON(t *testing.T) {
 	defer w2.Close()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var data map[string]any
 		params.Decode(&data)
 		return data, nil
@@ -436,7 +436,7 @@ func TestPeer_CloseHandling(t *testing.T) {
 	r2, w2 := io.Pipe()
 
 	serverRoot := NewMethodMap()
-	serverRoot.Register("echo", func(params Params) (any, error) {
+	serverRoot.Register("echo", func(params Params, caller Caller) (any, error) {
 		var msg string
 		params.Decode(&msg)
 		return msg, nil

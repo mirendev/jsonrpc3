@@ -136,17 +136,22 @@ type WebTransportConn struct {
 // newWebTransportConn creates a new WebTransport connection handler.
 func newWebTransportConn(session *webtransport.Session, rootObject Object, contentType string, mimeTypes []string) *WebTransportConn {
 	wtSession := NewSession()
-	handler := NewHandler(wtSession, rootObject, mimeTypes)
 
-	return &WebTransportConn{
+	// Create connection first (without handler)
+	conn := &WebTransportConn{
 		session:     session,
 		wtSession:   wtSession,
-		handler:     handler,
+		handler:     nil, // Will be set below
 		contentType: contentType,
 		refPrefix:   generateConnID(),
 		writeChan:   make(chan MessageSetConvertible, 100),
 		closeChan:   make(chan struct{}),
 	}
+
+	// Now create handler with connection as caller
+	conn.handler = NewHandler(wtSession, rootObject, conn, mimeTypes)
+
+	return conn
 }
 
 // handle starts the read and write loops for this connection.
