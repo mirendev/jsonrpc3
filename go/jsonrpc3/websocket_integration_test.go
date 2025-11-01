@@ -113,11 +113,13 @@ func TestWebSocketIntegration_BidirectionalCallbacks(t *testing.T) {
 	client.RegisterObject("my-callback", callbackObj)
 
 	// Subscribe with callback
-	var result map[string]any
-	err = client.Call("subscribe", map[string]any{
+	val, err := client.Call("subscribe", map[string]any{
 		"topic":    "news",
 		"callback": NewReference("my-callback"),
-	}, &result)
+	})
+	require.NoError(t, err)
+	var result map[string]any
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "subscribed", result["status"])
 
@@ -204,8 +206,10 @@ func TestWebSocketIntegration_ConcurrentBidirectional(t *testing.T) {
 	for i := 0; i < numCalls; i++ {
 		go func(n int) {
 			defer wg.Done()
+			val, err := client.Call("serverEcho", "test")
+			assert.NoError(t, err)
 			var result string
-			err := client.Call("serverEcho", "test", &result)
+			err = val.Decode(&result)
 			assert.NoError(t, err)
 			assert.Equal(t, "server: test", result)
 		}(i)
@@ -220,8 +224,10 @@ func TestWebSocketIntegration_ConcurrentBidirectional(t *testing.T) {
 			connMu.Unlock()
 
 			if sc != nil {
+				val, err := sc.Call("", "clientEcho", "test")
+				assert.NoError(t, err)
 				var result string
-				err := sc.Call("", "clientEcho", "test", &result)
+				err = val.Decode(&result)
 				assert.NoError(t, err)
 				assert.Equal(t, "client: test", result)
 			}
@@ -286,15 +292,19 @@ func TestWebSocketIntegration_ObjectLifecycle(t *testing.T) {
 	defer client.Close()
 
 	// Create object
+	val1, err := client.Call("createObject", nil)
+	require.NoError(t, err)
 	var ref Reference
-	err = client.Call("createObject", nil, &ref)
+	err = val1.Decode(&ref)
 	require.NoError(t, err)
 	assert.NotEmpty(t, ref.Ref)
 	assert.Equal(t, int32(1), objectCount.Load())
 
 	// Use object
+	val2, err := client.Call("getValue", nil, ToRef(ref))
+	require.NoError(t, err)
 	var value string
-	err = client.Call("getValue", nil, &value, ToRef(ref))
+	err = val2.Decode(&value)
 	require.NoError(t, err)
 	assert.Equal(t, "object value", value)
 
@@ -331,26 +341,34 @@ func TestWebSocketIntegration_ProtocolMethods(t *testing.T) {
 	defer client.Close()
 
 	// Create object
+	val1, err := client.Call("createObject", nil)
+	require.NoError(t, err)
 	var ref Reference
-	err = client.Call("createObject", nil, &ref)
+	err = val1.Decode(&ref)
 	require.NoError(t, err)
 
 	// Get session ID via protocol method
+	val2, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var sessionResult SessionIDResult
-	err = client.Call("session_id", nil, &sessionResult, ToRef(Protocol))
+	err = val2.Decode(&sessionResult)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult.SessionID)
 
 	// List refs via protocol method
+	val3, err := client.Call("list_refs", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var refs []RefInfoResult
-	err = client.Call("list_refs", nil, &refs, ToRef(Protocol))
+	err = val3.Decode(&refs)
 	require.NoError(t, err)
 	// Client shouldn't see its own remote refs in list_refs
 	// list_refs returns local refs, which for client are objects it exposes
 
 	// Get mimetypes
+	val4, err := client.Call("mimetypes", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var mimeResult MimeTypesResult
-	err = client.Call("mimetypes", nil, &mimeResult, ToRef(Protocol))
+	err = val4.Decode(&mimeResult)
 	require.NoError(t, err)
 	assert.Contains(t, mimeResult.MimeTypes, "application/json")
 }
@@ -374,8 +392,7 @@ func TestWebSocketIntegration_ReconnectionBehavior(t *testing.T) {
 
 	session1ID := client1.GetSession().ID()
 
-	var result1 string
-	err = client1.Call("test", nil, &result1)
+	_, err = client1.Call("test", nil)
 	require.NoError(t, err)
 
 	// Close first connection
@@ -391,8 +408,7 @@ func TestWebSocketIntegration_ReconnectionBehavior(t *testing.T) {
 	// Sessions should be different
 	assert.NotEqual(t, session1ID, session2ID)
 
-	var result2 string
-	err = client2.Call("test", nil, &result2)
+	_, err = client2.Call("test", nil)
 	require.NoError(t, err)
 }
 
@@ -431,8 +447,10 @@ func TestWebSocketIntegration_MultipleClients(t *testing.T) {
 	for i := 0; i < numClients; i++ {
 		go func(n int, c *WebSocketClient) {
 			defer wg.Done()
+			val, err := c.Call("echo", "test")
+			assert.NoError(t, err)
 			var result string
-			err := c.Call("echo", "test", &result)
+			err = val.Decode(&result)
 			assert.NoError(t, err)
 			assert.Equal(t, "test", result)
 		}(i, clients[i])

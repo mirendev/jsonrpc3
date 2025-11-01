@@ -130,10 +130,10 @@ func newWebTransportClient(url string, rootObject Object, options *clientOptions
 
 // Call invokes a method on the server and waits for the response.
 // Use the ToRef option to call a method on a remote object reference.
-func (c *WebTransportClient) Call(method string, params any, result any, opts ...CallOption) error {
+func (c *WebTransportClient) Call(method string, params any, opts ...CallOption) (Value, error) {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
-		return err
+		return Value{}, err
 	}
 
 	// Apply options
@@ -149,7 +149,7 @@ func (c *WebTransportClient) Call(method string, params any, result any, opts ..
 	// Create request
 	req, err := NewRequestWithFormat(method, params, id, c.contentType)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return Value{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	if options.ref != nil {
@@ -166,7 +166,7 @@ func (c *WebTransportClient) Call(method string, params any, result any, opts ..
 	case c.writeChan <- req:
 		// Successfully queued for sending
 	case <-c.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 
 	// Wait for response with timeout
@@ -176,23 +176,21 @@ func (c *WebTransportClient) Call(method string, params any, result any, opts ..
 	select {
 	case resp := <-respChan:
 		if resp.Error != nil {
-			return resp.Error
+			return Value{}, resp.Error
 		}
 
-		// Decode result if provided
-		if result != nil && resp.Result != nil {
-			params := NewParamsWithFormat(resp.Result, c.contentType)
-			if err := params.Decode(result); err != nil {
-				return fmt.Errorf("failed to decode result: %w", err)
-			}
+		// Return Value for lazy decoding
+		if resp.Result != nil {
+			codec := GetCodec(c.contentType)
+			return NewValueWithCodec(resp.Result, codec), nil
 		}
-		return nil
+		return NilValue, nil
 
 	case <-ctx.Done():
-		return fmt.Errorf("request timeout")
+		return Value{}, fmt.Errorf("request timeout")
 
 	case <-c.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 }
 

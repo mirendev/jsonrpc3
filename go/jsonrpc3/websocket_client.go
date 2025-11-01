@@ -174,10 +174,10 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 
 // Call invokes a method on the server and waits for the response.
 // Use the ToRef option to call a method on a remote object reference.
-func (c *WebSocketClient) Call(method string, params any, result any, opts ...CallOption) error {
+func (c *WebSocketClient) Call(method string, params any, opts ...CallOption) (Value, error) {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
-		return err
+		return Value{}, err
 	}
 
 	// Apply options
@@ -193,7 +193,7 @@ func (c *WebSocketClient) Call(method string, params any, result any, opts ...Ca
 	// Create request
 	req, err := NewRequestWithFormat(method, params, id, c.contentType)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return Value{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	if options.ref != nil {
@@ -210,7 +210,7 @@ func (c *WebSocketClient) Call(method string, params any, result any, opts ...Ca
 	msgSet := req.ToMessageSet()
 	reqData, err := codec.MarshalMessages(msgSet)
 	if err != nil {
-		return fmt.Errorf("failed to encode request: %w", err)
+		return Value{}, fmt.Errorf("failed to encode request: %w", err)
 	}
 
 	// Send via write channel
@@ -218,7 +218,7 @@ func (c *WebSocketClient) Call(method string, params any, result any, opts ...Ca
 	case c.writeChan <- reqData:
 		// Successfully queued for sending
 	case <-c.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 
 	// Wait for response with timeout
@@ -228,23 +228,20 @@ func (c *WebSocketClient) Call(method string, params any, result any, opts ...Ca
 	select {
 	case resp := <-respChan:
 		if resp.Error != nil {
-			return resp.Error
+			return Value{}, resp.Error
 		}
 
-		// Decode result if provided
-		if result != nil && resp.Result != nil {
-			params := NewParamsWithFormat(resp.Result, c.contentType)
-			if err := params.Decode(result); err != nil {
-				return fmt.Errorf("failed to decode result: %w", err)
-			}
+		// Return Value for lazy decoding
+		if resp.Result != nil {
+			return NewValueWithCodec(resp.Result, codec), nil
 		}
-		return nil
+		return NilValue, nil
 
 	case <-ctx.Done():
-		return fmt.Errorf("request timeout")
+		return Value{}, fmt.Errorf("request timeout")
 
 	case <-c.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 }
 

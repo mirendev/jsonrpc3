@@ -121,11 +121,12 @@ func Stdio(rootObject Object, opts ...ClientOption) (*Peer, error) {
 }
 
 // Call invokes a method on the remote peer and waits for the response.
+// Returns a Value that can be decoded or inspected.
 // Use the ToRef option to call a method on a remote object reference.
-func (p *Peer) Call(method string, params any, result any, opts ...CallOption) error {
+func (p *Peer) Call(method string, params any, opts ...CallOption) (Value, error) {
 	// Check if connection is closed
 	if err := p.getError(); err != nil {
-		return err
+		return Value{}, err
 	}
 
 	// Apply options
@@ -141,7 +142,7 @@ func (p *Peer) Call(method string, params any, result any, opts ...CallOption) e
 	// Create request
 	req, err := NewRequestWithFormat(method, params, id, p.contentType)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return Value{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	if options.ref != nil {
@@ -158,7 +159,7 @@ func (p *Peer) Call(method string, params any, result any, opts ...CallOption) e
 	case p.writeChan <- req:
 		// Successfully queued for sending
 	case <-p.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 
 	// Wait for response with timeout
@@ -168,23 +169,21 @@ func (p *Peer) Call(method string, params any, result any, opts ...CallOption) e
 	select {
 	case resp := <-respChan:
 		if resp.Error != nil {
-			return resp.Error
+			return Value{}, resp.Error
 		}
 
-		// Decode result if provided
-		if result != nil && resp.Result != nil {
-			params := NewParamsWithFormat(resp.Result, p.contentType)
-			if err := params.Decode(result); err != nil {
-				return fmt.Errorf("failed to decode result: %w", err)
-			}
+		// Return Value for lazy decoding
+		if resp.Result != nil {
+			codec := GetCodec(p.contentType)
+			return NewValueWithCodec(resp.Result, codec), nil
 		}
-		return nil
+		return NilValue, nil
 
 	case <-ctx.Done():
-		return ctx.Err()
+		return Value{}, ctx.Err()
 
 	case <-p.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 }
 

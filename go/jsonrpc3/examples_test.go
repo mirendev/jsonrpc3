@@ -283,8 +283,9 @@ func Example_webSocket() {
 	defer client.Close()
 
 	// Make a call
+	val, _ := client.Call("add", []int{1, 2, 3})
 	var result int
-	client.Call("add", []int{1, 2, 3}, &result)
+	val.Decode(&result)
 	fmt.Printf("Sum: %d\n", result)
 
 	// Output:
@@ -323,8 +324,9 @@ func Example_webSocketBidirectional() {
 	defer client.Close()
 
 	// Client calls server
+	val, _ := client.Call("ping", nil)
 	var result string
-	client.Call("ping", nil, &result)
+	val.Decode(&result)
 	fmt.Printf("Client->Server: %s\n", result)
 
 	// In a real scenario, server would call client via serverConn.Call()
@@ -375,8 +377,9 @@ func Example_webTransport() {
 		client, _ := jsonrpc3.NewWebTransportClient("https://localhost:4433/", nil)
 		defer client.Close()
 
+		val, _ := client.Call("add", []int{1, 2, 3})
 		var result int
-		client.Call("add", []int{1, 2, 3}, &result)
+		val.Decode(&result)
 		fmt.Printf("Sum: %d\n", result)
 	}
 

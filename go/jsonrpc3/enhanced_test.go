@@ -259,13 +259,15 @@ func TestIsEnhancedType(t *testing.T) {
 
 // TestDecodeEnhancedType tests enhanced type decoding
 func TestDecodeEnhancedType(t *testing.T) {
+	codec := GetCodec("application/json")
+
 	// DateTime
 	dt := NewDateTime(time.Date(2025, 10, 27, 10, 30, 0, 0, time.UTC))
 	dtJSON, _ := json.Marshal(dt)
 	var dtMap map[string]any
 	json.Unmarshal(dtJSON, &dtMap)
 
-	decoded, err := DecodeEnhancedType(dtMap, "application/json")
+	decoded, err := DecodeEnhancedType(dtMap, codec)
 	require.NoError(t, err)
 	assert.IsType(t, time.Time{}, decoded)
 
@@ -275,7 +277,7 @@ func TestDecodeEnhancedType(t *testing.T) {
 	var bMap map[string]any
 	json.Unmarshal(bJSON, &bMap)
 
-	decoded, err = DecodeEnhancedType(bMap, "application/json")
+	decoded, err = DecodeEnhancedType(bMap, codec)
 	require.NoError(t, err)
 	assert.IsType(t, []byte{}, decoded)
 	assert.Equal(t, []byte("test"), decoded)
@@ -286,7 +288,7 @@ func TestDecodeEnhancedType(t *testing.T) {
 	var biMap map[string]any
 	json.Unmarshal(biJSON, &biMap)
 
-	decoded, err = DecodeEnhancedType(biMap, "application/json")
+	decoded, err = DecodeEnhancedType(biMap, codec)
 	require.NoError(t, err)
 	assert.IsType(t, &big.Int{}, decoded)
 
@@ -296,13 +298,13 @@ func TestDecodeEnhancedType(t *testing.T) {
 	var reMap map[string]any
 	json.Unmarshal(reJSON, &reMap)
 
-	decoded, err = DecodeEnhancedType(reMap, "application/json")
+	decoded, err = DecodeEnhancedType(reMap, codec)
 	require.NoError(t, err)
 	assert.IsType(t, &regexp.Regexp{}, decoded)
 
 	// Non-enhanced type
 	normalData := map[string]any{"foo": "bar"}
-	decoded, err = DecodeEnhancedType(normalData, "application/json")
+	decoded, err = DecodeEnhancedType(normalData, codec)
 	require.NoError(t, err)
 	assert.Equal(t, normalData, decoded)
 
@@ -311,7 +313,7 @@ func TestDecodeEnhancedType(t *testing.T) {
 		"$type": "unknown",
 		"value": "test",
 	}
-	decoded, err = DecodeEnhancedType(unknownData, "application/json")
+	decoded, err = DecodeEnhancedType(unknownData, codec)
 	require.NoError(t, err)
 	assert.Equal(t, unknownData, decoded)
 }

@@ -29,8 +29,9 @@ func (t toRefOption) apply(o *callOptions) {
 // It is implemented by Peer, WebSocketClient, WebTransportClient, and WebTransportConn.
 type Caller interface {
 	// Call invokes a method on the remote peer and waits for the response.
+	// Returns a Value that can be decoded or inspected.
 	// Use the ToRef option to call a method on a remote object reference.
-	Call(method string, params any, result any, opts ...CallOption) error
+	Call(method string, params any, opts ...CallOption) (Value, error)
 
 	// Notify sends a notification (no response expected).
 	// Use the ToRef option to send a notification to a remote object reference.

@@ -44,8 +44,10 @@ func TestPeer_BasicCommunication(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Test echo call from peer2 to peer1
+	val, err := peer2.Call("echo", "hello")
+	require.NoError(t, err)
 	var result string
-	err = peer2.Call("echo", "hello", &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", result)
 }
@@ -90,14 +92,18 @@ func TestPeer_BidirectionalCalls(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Peer 2 calls peer 1
+	val1, err := peer2.Call("greet", "Alice")
+	require.NoError(t, err)
 	var greeting string
-	err = peer2.Call("greet", "Alice", &greeting)
+	err = val1.Decode(&greeting)
 	require.NoError(t, err)
 	assert.Equal(t, "Hello, Alice", greeting)
 
 	// Peer 1 calls peer 2
+	val2, err := peer1.Call("add", []int{1, 2, 3, 4, 5})
+	require.NoError(t, err)
 	var sum int
-	err = peer1.Call("add", []int{1, 2, 3, 4, 5}, &sum)
+	err = val2.Decode(&sum)
 	require.NoError(t, err)
 	assert.Equal(t, 15, sum)
 }
@@ -182,8 +188,10 @@ func TestPeer_ConcurrentRequests(t *testing.T) {
 	for i := 0; i < numCalls; i++ {
 		go func(idx int) {
 			defer wg.Done()
+			val, err := peer2.Call("increment", nil)
+			assert.NoError(t, err)
 			var result int
-			err := peer2.Call("increment", nil, &result)
+			err = val.Decode(&result)
 			assert.NoError(t, err)
 			resultsMu.Lock()
 			results[idx] = result
@@ -244,21 +252,29 @@ func TestPeer_ObjectRegistration(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Get counter reference
+	val, err := peer2.Call("getCounter", nil)
+	require.NoError(t, err)
 	var counterRef Reference
-	err = peer2.Call("getCounter", nil, &counterRef)
+	err = val.Decode(&counterRef)
 	require.NoError(t, err)
 
 	// Call methods on the counter object
+	val2, err := peer2.Call("increment", nil, ToRef(counterRef))
+	require.NoError(t, err)
 	var result int
-	err = peer2.Call("increment", nil, &result, ToRef(counterRef))
+	err = val2.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 1, result)
 
-	err = peer2.Call("increment", nil, &result, ToRef(counterRef))
+	val3, err := peer2.Call("increment", nil, ToRef(counterRef))
+	require.NoError(t, err)
+	err = val3.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 2, result)
 
-	err = peer2.Call("getCount", nil, &result, ToRef(counterRef))
+	val4, err := peer2.Call("getCount", nil, ToRef(counterRef))
+	require.NoError(t, err)
+	err = val4.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 2, result)
 }
@@ -301,18 +317,20 @@ func TestPeer_ErrorHandling(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Test valid division
+	val, err := peer2.Call("divide", map[string]float64{"a": 10, "b": 2})
+	require.NoError(t, err)
 	var result float64
-	err = peer2.Call("divide", map[string]float64{"a": 10, "b": 2}, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 5.0, result)
 
 	// Test division by zero
-	err = peer2.Call("divide", map[string]float64{"a": 10, "b": 0}, &result)
+	_, err = peer2.Call("divide", map[string]float64{"a": 10, "b": 0})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Division by zero")
 
 	// Test method not found
-	err = peer2.Call("nonexistent", nil, &result)
+	_, err = peer2.Call("nonexistent", nil)
 	require.Error(t, err)
 }
 
@@ -350,8 +368,10 @@ func TestPeer_CBOR(t *testing.T) {
 		"name":  "test",
 		"value": 42,
 	}
+	val, err := peer2.Call("echo", input)
+	require.NoError(t, err)
 	var result map[string]any
-	err = peer2.Call("echo", input, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "test", result["name"])
 	// CBOR may decode integers as uint64 or int64
@@ -401,8 +421,10 @@ func TestPeer_JSON(t *testing.T) {
 		"name":  "test",
 		"value": float64(42), // JSON always uses float64 for numbers
 	}
+	val, err := peer2.Call("echo", input)
+	require.NoError(t, err)
 	var result map[string]any
-	err = peer2.Call("echo", input, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "test", result["name"])
 	assert.Equal(t, float64(42), result["value"])
@@ -429,8 +451,10 @@ func TestPeer_CloseHandling(t *testing.T) {
 	time.Sleep(50 * time.Millisecond)
 
 	// Make a successful call
+	val, err := peer2.Call("echo", "test")
+	require.NoError(t, err)
 	var result string
-	err = peer2.Call("echo", "test", &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "test", result)
 
@@ -443,7 +467,7 @@ func TestPeer_CloseHandling(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// Try to call - should fail
-	err = peer2.Call("echo", "test", &result)
+	_, err = peer2.Call("echo", "test")
 	assert.Error(t, err)
 
 	// Close peer2

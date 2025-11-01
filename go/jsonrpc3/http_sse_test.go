@@ -67,12 +67,13 @@ func TestHTTPSSE_BasicCallback(t *testing.T) {
 	client.RegisterCallback("client-callback-1", callback)
 
 	// Make call passing callback reference
-	var result map[string]any
-	err := client.Call("subscribe", map[string]any{
+	val, err := client.Call("subscribe", map[string]any{
 		"topic":    "updates",
 		"callback": Reference{Ref: "client-callback-1"},
-	}, &result)
-
+	})
+	require.NoError(t, err)
+	var result map[string]any
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "subscribed", result["status"])
 	assert.Equal(t, "updates", result["topic"])
@@ -151,12 +152,13 @@ func TestHTTPSSE_MultipleCallbacks(t *testing.T) {
 	client.RegisterCallback("event-cb", eventCallback)
 	client.RegisterCallback("error-cb", errorCallback)
 
-	var result string
-	err := client.Call("setup", map[string]any{
+	val, err := client.Call("setup", map[string]any{
 		"onEvent": Reference{Ref: "event-cb"},
 		"onError": Reference{Ref: "error-cb"},
-	}, &result)
-
+	})
+	require.NoError(t, err)
+	var result string
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "configured", result)
 }
@@ -210,10 +212,12 @@ func TestHTTPSSE_SessionPersistence(t *testing.T) {
 	client.RegisterCallback("persist-cb", callback)
 
 	// First call with callback in params object
-	var result string
-	err := client.Call("register", map[string]any{
+	val, err := client.Call("register", map[string]any{
 		"callback": Reference{Ref: "persist-cb"},
-	}, &result)
+	})
+	require.NoError(t, err)
+	var result string
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "registered", result)
 
@@ -222,9 +226,11 @@ func TestHTTPSSE_SessionPersistence(t *testing.T) {
 	assert.NotEmpty(t, sessionID, "Session ID should be set after SSE request")
 
 	// Second call should use same session
-	err = client.Call("register", map[string]any{
+	val2, err := client.Call("register", map[string]any{
 		"callback": Reference{Ref: "persist-cb"},
-	}, &result)
+	})
+	require.NoError(t, err)
+	err = val2.Decode(&result)
 	require.NoError(t, err)
 
 	// Session ID should be the same
@@ -259,8 +265,10 @@ func TestHTTPSSE_Format(t *testing.T) {
 			callback := &CallbackCounter{}
 			client.RegisterCallback("format-cb", callback)
 
+			val, err := client.Call("subscribe", Reference{Ref: "format-cb"})
+			require.NoError(t, err)
 			var result string
-			err := client.Call("subscribe", Reference{Ref: "format-cb"}, &result)
+			err = val.Decode(&result)
 			require.NoError(t, err)
 			assert.Equal(t, "subscribed", result)
 		})
@@ -291,8 +299,7 @@ func TestHTTPSSE_ErrorHandling(t *testing.T) {
 	callback := &CallbackCounter{}
 	client.RegisterCallback("error-cb", callback)
 
-	var result string
-	err := client.Call("failWithCallback", Reference{Ref: "error-cb"}, &result)
+	_, err := client.Call("failWithCallback", Reference{Ref: "error-cb"})
 
 	// Should receive error
 	require.Error(t, err)

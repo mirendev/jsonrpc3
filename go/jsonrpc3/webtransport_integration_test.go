@@ -72,14 +72,18 @@ func TestWebTransportIntegration_BasicCall(t *testing.T) {
 	time.Sleep(300 * time.Millisecond)
 
 	// Test echo
+	val1, err := client.Call("echo", "hello")
+	require.NoError(t, err)
 	var echoResult string
-	err = client.Call("echo", "hello", &echoResult)
+	err = val1.Decode(&echoResult)
 	require.NoError(t, err)
 	assert.Equal(t, "hello", echoResult)
 
 	// Test add
+	val2, err := client.Call("add", []int{1, 2, 3, 4})
+	require.NoError(t, err)
 	var addResult int
-	err = client.Call("add", []int{1, 2, 3, 4}, &addResult)
+	err = val2.Decode(&addResult)
 	require.NoError(t, err)
 	assert.Equal(t, 10, addResult)
 }
@@ -171,11 +175,13 @@ func TestWebTransportIntegration_BidirectionalCallbacks(t *testing.T) {
 	client.RegisterObject("my-callback", callbackObj)
 
 	// Subscribe with callback
-	var result map[string]any
-	err = client.Call("subscribe", map[string]any{
+	val, err := client.Call("subscribe", map[string]any{
 		"topic":    "news",
 		"callback": NewReference("my-callback"),
-	}, &result)
+	})
+	require.NoError(t, err)
+	var result map[string]any
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "subscribed", result["status"])
 
@@ -229,8 +235,10 @@ func TestWebTransportIntegration_ConcurrentCalls(t *testing.T) {
 	for i := 0; i < numCalls; i++ {
 		go func(idx int) {
 			defer wg.Done()
+			val, err := client.Call("increment", nil)
+			assert.NoError(t, err)
 			var result int
-			err := client.Call("increment", nil, &result)
+			err = val.Decode(&result)
 			assert.NoError(t, err)
 			resultsMu.Lock()
 			results[idx] = result
@@ -284,18 +292,20 @@ func TestWebTransportIntegration_ErrorHandling(t *testing.T) {
 	defer client.Close()
 
 	// Test valid division
+	val, err := client.Call("divide", map[string]float64{"a": 10, "b": 2})
+	require.NoError(t, err)
 	var result float64
-	err = client.Call("divide", map[string]float64{"a": 10, "b": 2}, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 5.0, result)
 
 	// Test division by zero
-	err = client.Call("divide", map[string]float64{"a": 10, "b": 0}, &result)
+	_, err = client.Call("divide", map[string]float64{"a": 10, "b": 0})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Division by zero")
 
 	// Test method not found
-	err = client.Call("nonexistent", nil, &result)
+	_, err = client.Call("nonexistent", nil)
 	require.Error(t, err)
 }
 
@@ -374,8 +384,10 @@ func TestWebTransportIntegration_CBOR(t *testing.T) {
 		"name":  "test",
 		"value": 42,
 	}
+	val, err := client.Call("echo", input)
+	require.NoError(t, err)
 	var result map[string]any
-	err = client.Call("echo", input, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "test", result["name"])
 	// CBOR may decode integers as uint64 or int64
@@ -509,8 +521,12 @@ func TestWebTransportIntegration_Documentation(t *testing.T) {
 		}
 		defer client2.Close()
 
+		val, err := client2.Call("add", []int{1, 2, 3})
+		if err != nil {
+			return err
+		}
 		var result int
-		err = client2.Call("add", []int{1, 2, 3}, &result)
+		err = val.Decode(&result)
 		if err != nil {
 			return err
 		}

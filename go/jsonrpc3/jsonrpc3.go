@@ -5,6 +5,9 @@ package jsonrpc3
 import (
 	"encoding/json"
 	"fmt"
+	"math/big"
+	"regexp"
+	"time"
 
 	"github.com/fxamacker/cbor/v2"
 )
@@ -358,8 +361,8 @@ func NewReference(ref string) Reference {
 }
 
 // Call invokes a method on the remote reference using the provided Caller.
-func (r Reference) Call(caller Caller, method string, params any, result any) error {
-	return caller.Call(method, params, result, ToRef(r))
+func (r Reference) Call(caller Caller, method string, params any) (Value, error) {
+	return caller.Call(method, params, ToRef(r))
 }
 
 // Notify sends a notification to the remote reference using the provided Caller.
@@ -432,6 +435,530 @@ func NewParamsWithFormat(data RawMessage, mimetype string) Params {
 
 	// Default to JSON
 	return &jsonParams{data: data}
+}
+
+// Kind represents the kind of value stored in a Value.
+type Kind uint
+
+const (
+	InvalidKind Kind = iota
+	NullKind
+	BoolKind
+	IntKind
+	FloatKind
+	StringKind
+	ArrayKind
+	ObjectKind
+	// JSON-RPC 3.0 special types
+	ReferenceKind // Reference to a remote object
+	DateTimeKind  // Enhanced DateTime type
+	BytesKind     // Enhanced Bytes type
+	BigIntKind    // Enhanced BigInt type
+	RegExpKind    // Enhanced RegExp type
+)
+
+// String returns the string representation of the Kind.
+func (k Kind) String() string {
+	switch k {
+	case InvalidKind:
+		return "invalid"
+	case NullKind:
+		return "null"
+	case BoolKind:
+		return "bool"
+	case IntKind:
+		return "int"
+	case FloatKind:
+		return "float"
+	case StringKind:
+		return "string"
+	case ArrayKind:
+		return "array"
+	case ObjectKind:
+		return "object"
+	case ReferenceKind:
+		return "reference"
+	case DateTimeKind:
+		return "datetime"
+	case BytesKind:
+		return "bytes"
+	case BigIntKind:
+		return "bigint"
+	case RegExpKind:
+		return "regexp"
+	default:
+		return "unknown"
+	}
+}
+
+// Value represents a JSON-RPC result value with lazy decoding.
+// It provides reflect.Value-like access to result data without requiring
+// upfront decoding into a specific type.
+type Value struct {
+	data    RawMessage
+	codec   Codec
+	cached  any
+	decoded bool
+}
+
+// ensureDecoded decodes the value if it hasn't been decoded yet.
+func (v *Value) ensureDecoded() error {
+	if v.decoded {
+		return nil
+	}
+
+	if v.data == nil {
+		v.cached = nil
+		v.decoded = true
+		return nil
+	}
+
+	if err := v.codec.Unmarshal(v.data, &v.cached); err != nil {
+		return err
+	}
+
+	v.decoded = true
+	return nil
+}
+
+// Kind returns the kind of value.
+func (v *Value) Kind() Kind {
+	if err := v.ensureDecoded(); err != nil {
+		return InvalidKind
+	}
+
+	if v.cached == nil {
+		return NullKind
+	}
+
+	// Check for Reference first (has $ref field)
+	if v.IsReference() {
+		return ReferenceKind
+	}
+
+	// Check for Enhanced types (has $type field)
+	if typeName, isEnhanced := v.IsEnhanced(); isEnhanced {
+		switch typeName {
+		case TypeDateTime:
+			return DateTimeKind
+		case TypeBytes:
+			return BytesKind
+		case TypeBigInt:
+			return BigIntKind
+		case TypeRegExp:
+			return RegExpKind
+		}
+	}
+
+	// Check basic types
+	switch v.cached.(type) {
+	case bool:
+		return BoolKind
+	case float64, int64, int, int32, uint, uint32, uint64:
+		// JSON numbers are always float64, but we check other types too
+		return FloatKind
+	case string:
+		return StringKind
+	case []any:
+		return ArrayKind
+	case map[string]any, map[interface{}]interface{}:
+		return ObjectKind
+	default:
+		return InvalidKind
+	}
+}
+
+// IsNull returns true if the value is null.
+func (v *Value) IsNull() bool {
+	if err := v.ensureDecoded(); err != nil {
+		return false
+	}
+	return v.cached == nil
+}
+
+// String returns the value as a string.
+// In the case of non-string values, it coerces the value to a string.
+func (v *Value) String() string {
+	if err := v.ensureDecoded(); err != nil {
+		return ""
+	}
+	if s, ok := v.cached.(string); ok {
+		return s
+	}
+
+	return fmt.Sprint(v.cached)
+}
+
+// Int returns the value as an int64.
+// Returns 0 if the value is not numeric.
+func (v *Value) Int() int64 {
+	if err := v.ensureDecoded(); err != nil {
+		return 0
+	}
+
+	switch n := v.cached.(type) {
+	case float64:
+		return int64(n)
+	case int64:
+		return n
+	case int:
+		return int64(n)
+	case int32:
+		return int64(n)
+	case uint:
+		return int64(n)
+	case uint32:
+		return int64(n)
+	case uint64:
+		return int64(n)
+	default:
+		return 0
+	}
+}
+
+// Float returns the value as a float64.
+// Returns 0 if the value is not numeric.
+func (v *Value) Float() float64 {
+	if err := v.ensureDecoded(); err != nil {
+		return 0
+	}
+
+	switch n := v.cached.(type) {
+	case float64:
+		return n
+	case int64:
+		return float64(n)
+	case int:
+		return float64(n)
+	case int32:
+		return float64(n)
+	case uint:
+		return float64(n)
+	case uint32:
+		return float64(n)
+	case uint64:
+		return float64(n)
+	default:
+		return 0
+	}
+}
+
+// Bool returns the value as a bool.
+// Returns false if the value is not a bool.
+func (v *Value) Bool() bool {
+	if err := v.ensureDecoded(); err != nil {
+		return false
+	}
+	if b, ok := v.cached.(bool); ok {
+		return b
+	}
+	return false
+}
+
+// Reference returns the value as a Reference.
+// Returns an empty Reference if the value is not a reference.
+func (v *Value) Reference() Reference {
+	if v.Kind() != ReferenceKind {
+		return Reference{}
+	}
+
+	ref, err := v.AsReference()
+	if err != nil {
+		return Reference{}
+	}
+	return ref
+}
+
+// DateTime returns the value as a time.Time.
+// Returns zero time if the value is not a DateTime enhanced type.
+func (v *Value) DateTime() time.Time {
+	if v.Kind() != DateTimeKind {
+		return time.Time{}
+	}
+
+	enhanced, err := v.AsEnhanced()
+	if err != nil {
+		return time.Time{}
+	}
+
+	if t, ok := enhanced.(time.Time); ok {
+		return t
+	}
+	return time.Time{}
+}
+
+// Bytes returns the value as a byte slice.
+// Returns nil if the value is not a Bytes enhanced type.
+func (v *Value) Bytes() []byte {
+	if v.Kind() != BytesKind {
+		return nil
+	}
+
+	enhanced, err := v.AsEnhanced()
+	if err != nil {
+		return nil
+	}
+
+	if b, ok := enhanced.([]byte); ok {
+		return b
+	}
+	return nil
+}
+
+// BigInt returns the value as a *big.Int.
+// Returns nil if the value is not a BigInt enhanced type.
+func (v *Value) BigInt() *big.Int {
+	if v.Kind() != BigIntKind {
+		return nil
+	}
+
+	enhanced, err := v.AsEnhanced()
+	if err != nil {
+		return nil
+	}
+
+	if bi, ok := enhanced.(*big.Int); ok {
+		return bi
+	}
+	return nil
+}
+
+// RegExp returns the value as a *regexp.Regexp.
+// Returns nil if the value is not a RegExp enhanced type.
+func (v *Value) RegExp() *regexp.Regexp {
+	if v.Kind() != RegExpKind {
+		return nil
+	}
+
+	enhanced, err := v.AsEnhanced()
+	if err != nil {
+		return nil
+	}
+
+	if re, ok := enhanced.(*regexp.Regexp); ok {
+		return re
+	}
+	return nil
+}
+
+// Len returns the length of an array or object.
+// Returns 0 if the value is not an array or object.
+func (v *Value) Len() int {
+	if err := v.ensureDecoded(); err != nil {
+		return 0
+	}
+
+	switch val := v.cached.(type) {
+	case []any:
+		return len(val)
+	case map[string]any:
+		return len(val)
+	default:
+		return 0
+	}
+}
+
+// Index returns the element at index i in an array.
+// Returns an invalid Value if this is not an array or index is out of bounds.
+func (v *Value) Index(i int) Value {
+	if err := v.ensureDecoded(); err != nil {
+		return Value{}
+	}
+
+	arr, ok := v.cached.([]any)
+	if !ok || i < 0 || i >= len(arr) {
+		return Value{}
+	}
+
+	// Marshal to get the raw bytes for the element
+	data, err := v.codec.Marshal(arr[i])
+	if err != nil {
+		return Value{}
+	}
+
+	return Value{
+		data:    data,
+		codec:   v.codec,
+		cached:  arr[i],
+		decoded: true,
+	}
+}
+
+// MapIndex returns the value for key in an object.
+// Returns an invalid Value if this is not an object or key doesn't exist.
+func (v *Value) MapIndex(key string) Value {
+	if err := v.ensureDecoded(); err != nil {
+		return Value{}
+	}
+
+	obj, ok := v.cached.(map[string]any)
+	if !ok {
+		return Value{}
+	}
+
+	val, exists := obj[key]
+	if !exists {
+		return Value{cached: nil, decoded: true, codec: v.codec}
+	}
+
+	// Marshal to get the raw bytes for the value
+	data, err := v.codec.Marshal(val)
+	if err != nil {
+		return Value{}
+	}
+
+	return Value{
+		data:    data,
+		codec:   v.codec,
+		cached:  val,
+		decoded: true,
+	}
+}
+
+// IsReference checks if the value is a Reference (has $ref field).
+func (v *Value) IsReference() bool {
+	if err := v.ensureDecoded(); err != nil {
+		return false
+	}
+
+	// Check for JSON map (map[string]any)
+	if obj, ok := v.cached.(map[string]any); ok {
+		_, hasRef := obj["$ref"]
+		return hasRef
+	}
+
+	// Check for CBOR map (map[interface{}]interface{})
+	if obj, ok := v.cached.(map[interface{}]interface{}); ok {
+		_, hasRef := obj["$ref"]
+		return hasRef
+	}
+
+	return false
+}
+
+// AsReference extracts the value as a Reference.
+// Returns an error if the value is not a reference.
+func (v *Value) AsReference() (Reference, error) {
+	if !v.IsReference() {
+		return Reference{}, fmt.Errorf("value is not a reference")
+	}
+
+	var ref Reference
+	if err := v.codec.Unmarshal(v.data, &ref); err != nil {
+		return Reference{}, fmt.Errorf("failed to decode reference: %w", err)
+	}
+
+	return ref, nil
+}
+
+// IsEnhanced checks if the value is an enhanced type (has $type field).
+// Returns the type name if it's an enhanced type, or empty string if not.
+func (v *Value) IsEnhanced() (string, bool) {
+	if err := v.ensureDecoded(); err != nil {
+		return "", false
+	}
+
+	return IsEnhancedType(v.cached)
+}
+
+// AsEnhanced decodes the value as an enhanced type, returning the native Go type.
+// For DateTime returns time.Time, for Bytes returns []byte, for BigInt returns *big.Int,
+// for RegExp returns *regexp.Regexp. Returns an error if not an enhanced type.
+func (v *Value) AsEnhanced() (any, error) {
+	typeName, isEnhanced := v.IsEnhanced()
+	if !isEnhanced {
+		return nil, fmt.Errorf("value is not an enhanced type")
+	}
+
+	result, err := DecodeEnhancedType(v.cached, v.codec)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decode enhanced type %s: %w", typeName, err)
+	}
+
+	return result, nil
+}
+
+// Decode unmarshals the value into the provided variable.
+// This is useful when you know the expected type and want to decode into a struct.
+//
+// Automatic type detection:
+//   - When decoding into a Reference, automatically detects if the value has a $ref field
+//   - When decoding into time.Time, *big.Int, []byte, or *regexp.Regexp, automatically
+//     detects and decodes enhanced types (DateTime, BigInt, Bytes, RegExp)
+func (v *Value) Decode(target any) error {
+	if v.data == nil {
+		return nil
+	}
+
+	return v.codec.Unmarshal(v.data, target)
+}
+
+// Interface returns the value as an any (fully decoded).
+// This gives you direct access to the Go value.
+//
+// If the value is an enhanced type (DateTime, Bytes, BigInt, RegExp), it will be
+// automatically decoded to its native Go type (time.Time, []byte, *big.Int, *regexp.Regexp).
+// References are not automatically decoded by Interface() - use AsReference() for that.
+func (v *Value) Interface() (any, error) {
+	if err := v.ensureDecoded(); err != nil {
+		return nil, err
+	}
+
+	// Check if it's an enhanced type and auto-decode
+	if _, isEnhanced := v.IsEnhanced(); isEnhanced {
+		decoded, err := DecodeEnhancedType(v.cached, v.codec)
+		if err != nil {
+			// If decoding fails, return the raw value
+			return v.cached, nil
+		}
+		return decoded, nil
+	}
+
+	return v.cached, nil
+}
+
+// Raw returns the raw encoded bytes.
+func (v *Value) Raw() []byte {
+	return []byte(v.data)
+}
+
+// MarshalJSON implements json.Marshaler for Value.
+// This allows Value to be marshaled directly to JSON.
+// Uses a value receiver to ensure it works whether Value is used as a pointer or value.
+func (v Value) MarshalJSON() ([]byte, error) {
+	if err := v.ensureDecoded(); err != nil {
+		return nil, err
+	}
+
+	// Marshal the cached value to JSON
+	return json.Marshal(v.cached)
+}
+
+// MarshalCBOR implements cbor.Marshaler for Value.
+// This allows Value to be marshaled directly to CBOR.
+// Uses a value receiver to ensure it works whether Value is used as a pointer or value.
+func (v Value) MarshalCBOR() ([]byte, error) {
+	if err := v.ensureDecoded(); err != nil {
+		return nil, err
+	}
+
+	// Marshal the cached value to CBOR
+	return cbor.Marshal(v.cached)
+}
+
+// NilValue is a global nil Value with JSON codec.
+// Use this instead of creating new empty values.
+var NilValue = Value{
+	data:  nil,
+	codec: GetCodec(MimeTypeJSON),
+}
+
+// NewValueWithCodec creates a Value from RawMessage with the specified codec.
+func NewValueWithCodec(data RawMessage, codec Codec) Value {
+	return Value{
+		data:  data,
+		codec: codec,
+	}
 }
 
 // Batch represents a batch request (array of requests).

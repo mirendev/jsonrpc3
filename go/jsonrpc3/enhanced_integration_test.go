@@ -30,8 +30,10 @@ func TestEnhancedIntegration_DateTime(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Call method that returns DateTime
+	val, err := client.Call("getCurrentTime", nil)
+	require.NoError(t, err)
 	var result DateTime
-	err := client.Call("getCurrentTime", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 
 	assert.Equal(t, TypeDateTime, result.Type)
@@ -59,8 +61,10 @@ func TestEnhancedIntegration_Bytes(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Call method that returns Bytes
+	val, err := client.Call("getBinaryData", nil)
+	require.NoError(t, err)
 	var result Bytes
-	err := client.Call("getBinaryData", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 
 	assert.Equal(t, TypeBytes, result.Type)
@@ -88,8 +92,10 @@ func TestEnhancedIntegration_BigInt(t *testing.T) {
 	client.SetContentType("application/json") // Force JSON for debugging
 
 	// Call to get large number - decode as raw map first
+	val, err := client.Call("getLargeNumber", nil)
+	require.NoError(t, err)
 	var rawResult map[string]any
-	err := client.Call("getLargeNumber", nil, &rawResult)
+	err = val.Decode(&rawResult)
 	require.NoError(t, err)
 
 	// Verify structure
@@ -97,8 +103,10 @@ func TestEnhancedIntegration_BigInt(t *testing.T) {
 	assert.Equal(t, "123456789012345678901234567890", rawResult["value"])
 
 	// Now try with BigInt type
+	val2, err := client.Call("getLargeNumber", nil)
+	require.NoError(t, err)
 	var result BigInt
-	err = client.Call("getLargeNumber", nil, &result)
+	err = val2.Decode(&result)
 	require.NoError(t, err)
 
 	assert.Equal(t, TypeBigInt, result.Type)
@@ -127,8 +135,10 @@ func TestEnhancedIntegration_RegExp(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Call method that returns RegExp
+	val, err := client.Call("getEmailPattern", nil)
+	require.NoError(t, err)
 	var result RegExp
-	err := client.Call("getEmailPattern", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 
 	assert.Equal(t, TypeRegExp, result.Type)
@@ -164,8 +174,10 @@ func TestEnhancedIntegration_Mixed(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, nil)
 
+	val, err := client.Call("getSystemInfo", nil)
+	require.NoError(t, err)
 	var result map[string]any
-	err := client.Call("getSystemInfo", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 
 	// Verify all enhanced types are present
@@ -237,8 +249,10 @@ func TestEnhancedIntegration_CBOR(t *testing.T) {
 	client.SetContentType("application/cbor")
 
 	// Get binary data via CBOR
+	val, err := client.Call("getBinaryData", nil)
+	require.NoError(t, err)
 	var result Bytes
-	err := client.Call("getBinaryData", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 
 	assert.Equal(t, TypeBytes, result.Type)
@@ -266,8 +280,10 @@ func TestEnhancedIntegration_CustomType(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Unknown enhanced types are returned as-is
+	val, err := client.Call("getCustomData", nil)
+	require.NoError(t, err)
 	var result map[string]any
-	err := client.Call("getCustomData", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 
 	assert.Equal(t, "myapp.customtype", result["$type"])

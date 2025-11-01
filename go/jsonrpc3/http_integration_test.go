@@ -63,14 +63,18 @@ func TestHTTPIntegration_CompleteWorkflow(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Test add
+	val, err := client.Call("add", []int{10, 20, 30})
+	require.NoError(t, err)
 	var addResult int
-	err := client.Call("add", []int{10, 20, 30}, &addResult)
+	err = val.Decode(&addResult)
 	require.NoError(t, err)
 	assert.Equal(t, 60, addResult)
 
 	// Test multiply
+	val2, err := client.Call("multiply", []int{2, 3, 4})
+	require.NoError(t, err)
 	var mulResult int
-	err = client.Call("multiply", []int{2, 3, 4}, &mulResult)
+	err = val2.Decode(&mulResult)
 	require.NoError(t, err)
 	assert.Equal(t, 24, mulResult)
 
@@ -104,21 +108,27 @@ func TestHTTPIntegration_ProtocolMethods(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Get session ID - first request creates a session
+	val, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var sessionResult1 SessionIDResult
-	err := client.Call("session_id", nil, &sessionResult1, ToRef(Protocol))
+	err = val.Decode(&sessionResult1)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult1.SessionID)
 
 	// Get session ID again - should be the same (session persists)
+	val2, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var sessionResult2 SessionIDResult
-	err = client.Call("session_id", nil, &sessionResult2, ToRef(Protocol))
+	err = val2.Decode(&sessionResult2)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult2.SessionID)
 	assert.Equal(t, sessionResult1.SessionID, sessionResult2.SessionID, "Session should persist across requests")
 
 	// Get mime types - should support all 3 formats
+	val3, err := client.Call("mimetypes", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var mimeResult MimeTypesResult
-	err = client.Call("mimetypes", nil, &mimeResult, ToRef(Protocol))
+	err = val3.Decode(&mimeResult)
 	require.NoError(t, err)
 	assert.Len(t, mimeResult.MimeTypes, 3)
 	assert.Contains(t, mimeResult.MimeTypes, "application/json")
@@ -157,15 +167,14 @@ func TestHTTPIntegration_ErrorHandling(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Test invalid params
-	var result float64
-	err := client.Call("divide", "not an array", &result)
+	_, err := client.Call("divide", "not an array")
 	require.Error(t, err)
 	rpcErr, ok := err.(*Error)
 	require.True(t, ok)
 	assert.Equal(t, CodeInvalidParams, rpcErr.Code)
 
 	// Test custom error
-	err = client.Call("divide", []float64{10, 0}, &result)
+	_, err = client.Call("divide", []float64{10, 0})
 	require.Error(t, err)
 	rpcErr, ok = err.(*Error)
 	require.True(t, ok)
@@ -173,7 +182,10 @@ func TestHTTPIntegration_ErrorHandling(t *testing.T) {
 	assert.Equal(t, "Division by zero", rpcErr.Message)
 
 	// Test successful call
-	err = client.Call("divide", []float64{10, 2}, &result)
+	val, err := client.Call("divide", []float64{10, 2})
+	require.NoError(t, err)
+	var result float64
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 5.0, result)
 }
@@ -204,8 +216,10 @@ func TestHTTPIntegration_CBOR(t *testing.T) {
 		"age":    30,
 		"active": true,
 	}
+	val, err := client.Call("echo", input)
+	require.NoError(t, err)
 	var output map[string]any
-	err := client.Call("echo", input, &output)
+	err = val.Decode(&output)
 	require.NoError(t, err)
 
 	assert.Equal(t, "Alice", output["name"])
@@ -312,8 +326,10 @@ func TestHTTPIntegration_SessionPersistence(t *testing.T) {
 
 	// First request - should get a session ID
 	assert.Empty(t, client.SessionID())
+	val, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var sessionResult1 SessionIDResult
-	err := client.Call("session_id", nil, &sessionResult1, ToRef(Protocol))
+	err = val.Decode(&sessionResult1)
 	require.NoError(t, err)
 	assert.NotEmpty(t, sessionResult1.SessionID)
 
@@ -323,8 +339,10 @@ func TestHTTPIntegration_SessionPersistence(t *testing.T) {
 	assert.Equal(t, sessionResult1.SessionID, clientSessionID)
 
 	// Second request - should reuse the same session
+	val2, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var sessionResult2 SessionIDResult
-	err = client.Call("session_id", nil, &sessionResult2, ToRef(Protocol))
+	err = val2.Decode(&sessionResult2)
 	require.NoError(t, err)
 	assert.Equal(t, sessionResult1.SessionID, sessionResult2.SessionID, "Session should persist across requests")
 	assert.Equal(t, clientSessionID, client.SessionID(), "Client session ID should not change")
@@ -348,25 +366,33 @@ func TestHTTPIntegration_SessionObjectReferences(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create a counter - returns a local reference
+	val, err := client.Call("createCounter", nil)
+	require.NoError(t, err)
 	var localRef Reference
-	err := client.Call("createCounter", nil, &localRef)
+	err = val.Decode(&localRef)
 	require.NoError(t, err)
 	assert.NotEmpty(t, localRef.Ref)
 
 	// Call increment on the reference - should work because session persists
+	val2, err := client.Call("increment", nil, ToRef(localRef))
+	require.NoError(t, err)
 	var incResult int
-	err = client.Call("increment", nil, &incResult, ToRef(localRef))
+	err = val2.Decode(&incResult)
 	require.NoError(t, err)
 	assert.Equal(t, 1, incResult)
 
 	// Call increment again - should maintain state
-	err = client.Call("increment", nil, &incResult, ToRef(localRef))
+	val3, err := client.Call("increment", nil, ToRef(localRef))
+	require.NoError(t, err)
+	err = val3.Decode(&incResult)
 	require.NoError(t, err)
 	assert.Equal(t, 2, incResult)
 
 	// Get value
+	val4, err := client.Call("getValue", nil, ToRef(localRef))
+	require.NoError(t, err)
 	var getResult int
-	err = client.Call("getValue", nil, &getResult, ToRef(localRef))
+	err = val4.Decode(&getResult)
 	require.NoError(t, err)
 	assert.Equal(t, 2, getResult)
 }
@@ -385,11 +411,16 @@ func TestHTTPIntegration_MultipleClients(t *testing.T) {
 	client2 := NewHTTPClient(server.URL, nil)
 
 	// Get session IDs for both clients
-	var session1, session2 SessionIDResult
-	err := client1.Call("session_id", nil, &session1, ToRef(Protocol))
+	val1, err := client1.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
+	var session1 SessionIDResult
+	err = val1.Decode(&session1)
 	require.NoError(t, err)
 
-	err = client2.Call("session_id", nil, &session2, ToRef(Protocol))
+	val2, err := client2.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
+	var session2 SessionIDResult
+	err = val2.Decode(&session2)
 	require.NoError(t, err)
 
 	// Should have different session IDs
@@ -410,8 +441,10 @@ func TestHTTPIntegration_SessionReset(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Get initial session ID
+	val1, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var session1 SessionIDResult
-	err := client.Call("session_id", nil, &session1, ToRef(Protocol))
+	err = val1.Decode(&session1)
 	require.NoError(t, err)
 	firstSessionID := client.SessionID()
 	assert.Equal(t, session1.SessionID, firstSessionID)
@@ -421,8 +454,10 @@ func TestHTTPIntegration_SessionReset(t *testing.T) {
 	assert.Empty(t, client.SessionID())
 
 	// Next request should get a new session
+	val2, err := client.Call("session_id", nil, ToRef(Protocol))
+	require.NoError(t, err)
 	var session2 SessionIDResult
-	err = client.Call("session_id", nil, &session2, ToRef(Protocol))
+	err = val2.Decode(&session2)
 	require.NoError(t, err)
 	secondSessionID := client.SessionID()
 

@@ -53,8 +53,10 @@ func TestWebSocket_ClientToServerCall(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
+	val, err := client.Call("add", []int{1, 2, 3})
+	require.NoError(t, err)
 	var result int
-	err = client.Call("add", []int{1, 2, 3}, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 6, result)
 }
@@ -155,8 +157,10 @@ func TestWebSocket_ServerToClientCall(t *testing.T) {
 	connMu.Unlock()
 	require.NotNil(t, sc)
 
+	val, err := sc.Call("", "ping", nil)
+	require.NoError(t, err)
 	var result string
-	err = sc.Call("", "ping", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "pong", result)
 }
@@ -192,8 +196,10 @@ func TestWebSocket_ConcurrentRequests(t *testing.T) {
 		go func(n int) {
 			defer wg.Done()
 			msg := "test" + string(rune('0'+n))
+			val, err := client.Call("echo", msg)
+			assert.NoError(t, err)
 			var result string
-			err := client.Call("echo", msg, &result)
+			err = val.Decode(&result)
 			assert.NoError(t, err)
 			assert.Equal(t, msg, result)
 		}(i)
@@ -261,24 +267,32 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 	defer client.Close()
 
 	// Get counter reference
+	val1, err := client.Call("getCounter", nil)
+	require.NoError(t, err)
 	var ref Reference
-	err = client.Call("getCounter", nil, &ref)
+	err = val1.Decode(&ref)
 	require.NoError(t, err)
 	assert.Equal(t, "counter-1", ref.Ref)
 
 	// Call increment on ref
+	val2, err := client.Call("increment", nil, ToRef(ref))
+	require.NoError(t, err)
 	var count int
-	err = client.Call("increment", nil, &count, ToRef(ref))
+	err = val2.Decode(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 1, count)
 
 	// Call increment again
-	err = client.Call("increment", nil, &count, ToRef(ref))
+	val3, err := client.Call("increment", nil, ToRef(ref))
+	require.NoError(t, err)
+	err = val3.Decode(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 
 	// Get count
-	err = client.Call("getCount", nil, &count, ToRef(ref))
+	val4, err := client.Call("getCount", nil, ToRef(ref))
+	require.NoError(t, err)
+	err = val4.Decode(&count)
 	require.NoError(t, err)
 	assert.Equal(t, 2, count)
 }
@@ -302,8 +316,7 @@ func TestWebSocket_ErrorHandling(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	var result string
-	err = client.Call("fail", nil, &result)
+	_, err = client.Call("fail", nil)
 	require.Error(t, err)
 
 	rpcErr, ok := err.(*Error)
@@ -325,8 +338,7 @@ func TestWebSocket_MethodNotFound(t *testing.T) {
 	require.NoError(t, err)
 	defer client.Close()
 
-	var result string
-	err = client.Call("nonexistent", nil, &result)
+	_, err = client.Call("nonexistent", nil)
 	require.Error(t, err)
 
 	rpcErr, ok := err.(*Error)
@@ -351,8 +363,7 @@ func TestWebSocket_Close(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Subsequent calls should fail
-	var result string
-	err = client.Call("test", nil, &result)
+	_, err = client.Call("test", nil)
 	assert.Error(t, err)
 }
 
@@ -376,8 +387,10 @@ func TestWebSocket_ProtocolNegotiation(t *testing.T) {
 
 	assert.Equal(t, "application/cbor", client.contentType)
 
+	val, err := client.Call("test", nil)
+	require.NoError(t, err)
 	var result string
-	err = client.Call("test", nil, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "ok", result)
 }
@@ -426,8 +439,10 @@ func TestWebSocket_SessionManagement(t *testing.T) {
 	defer client.Close()
 
 	// Create counter (returns reference)
+	val, err := client.Call("createCounter", nil)
+	require.NoError(t, err)
 	var ref Reference
-	err = client.Call("createCounter", nil, &ref)
+	err = val.Decode(&ref)
 	require.NoError(t, err)
 
 	// Verify we got a reference

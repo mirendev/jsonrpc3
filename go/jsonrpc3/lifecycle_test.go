@@ -260,21 +260,27 @@ func TestLifecycle_FullIntegration(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Create disposable object
+	val1, err := client.Call("createDisposable", nil)
+	assert.NoError(t, err)
 	var ref1 Reference
-	err := client.Call("createDisposable", nil, &ref1)
+	err = val1.Decode(&ref1)
 	assert.NoError(t, err)
 
 	// Create closeable object
+	val2, err := client.Call("createCloseable", nil)
+	assert.NoError(t, err)
 	var ref2 Reference
-	err = client.Call("createCloseable", nil, &ref2)
+	err = val2.Decode(&ref2)
 	assert.NoError(t, err)
 
 	sessionID := client.SessionID()
 	assert.NotEmpty(t, sessionID, "Should have session ID")
 
 	// Verify objects work
+	val3, err := client.Call("increment", nil, ToRef(ref1))
+	assert.NoError(t, err)
 	var result int
-	err = client.Call("increment", nil, &result, ToRef(ref1))
+	err = val3.Decode(&result)
 	assert.NoError(t, err)
 	assert.Equal(t, 1, result)
 

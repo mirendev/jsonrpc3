@@ -181,10 +181,10 @@ func (c *WebTransportConn) handleWithCallback(onReady func(*WebTransportConn)) {
 
 // Call invokes a method on the client and waits for the response.
 // Use the ToRef option to call a method on a remote object reference.
-func (c *WebTransportConn) Call(method string, params any, result any, opts ...CallOption) error {
+func (c *WebTransportConn) Call(method string, params any, opts ...CallOption) (Value, error) {
 	// Check if connection is closed
 	if err := c.getError(); err != nil {
-		return err
+		return Value{}, err
 	}
 
 	// Apply options
@@ -200,7 +200,7 @@ func (c *WebTransportConn) Call(method string, params any, result any, opts ...C
 	// Create request
 	req, err := NewRequestWithFormat(method, params, id, c.contentType)
 	if err != nil {
-		return fmt.Errorf("failed to create request: %w", err)
+		return Value{}, fmt.Errorf("failed to create request: %w", err)
 	}
 
 	if options.ref != nil {
@@ -216,30 +216,28 @@ func (c *WebTransportConn) Call(method string, params any, result any, opts ...C
 	select {
 	case c.writeChan <- req:
 	case <-c.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 
 	// Wait for response with timeout
 	select {
 	case resp := <-respChan:
 		if resp.Error != nil {
-			return resp.Error
+			return Value{}, resp.Error
 		}
 
-		// Decode result if provided
-		if result != nil && resp.Result != nil {
-			params := NewParamsWithFormat(resp.Result, c.contentType)
-			if err := params.Decode(result); err != nil {
-				return fmt.Errorf("failed to decode result: %w", err)
-			}
+		// Return Value for lazy decoding
+		if resp.Result != nil {
+			codec := GetCodec(c.contentType)
+			return NewValueWithCodec(resp.Result, codec), nil
 		}
-		return nil
+		return NilValue, nil
 
 	case <-time.After(30 * time.Second):
-		return fmt.Errorf("request timeout")
+		return Value{}, fmt.Errorf("request timeout")
 
 	case <-c.closeChan:
-		return fmt.Errorf("connection closed")
+		return Value{}, fmt.Errorf("connection closed")
 	}
 }
 

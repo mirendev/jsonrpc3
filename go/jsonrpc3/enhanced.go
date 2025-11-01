@@ -295,6 +295,7 @@ func (re *RegExp) UnmarshalJSON(data []byte) error {
 
 // IsEnhancedType checks if the given data contains an enhanced type marker
 func IsEnhancedType(data any) (string, bool) {
+	// Check for JSON map (map[string]any)
 	if m, ok := data.(map[string]any); ok {
 		if typeVal, exists := m["$type"]; exists {
 			if typeStr, ok := typeVal.(string); ok {
@@ -302,19 +303,26 @@ func IsEnhancedType(data any) (string, bool) {
 			}
 		}
 	}
+
+	// Check for CBOR map (map[interface{}]interface{})
+	if m, ok := data.(map[interface{}]interface{}); ok {
+		if typeVal, exists := m["$type"]; exists {
+			if typeStr, ok := typeVal.(string); ok {
+				return typeStr, true
+			}
+		}
+	}
+
 	return "", false
 }
 
 // DecodeEnhancedType attempts to decode data as an enhanced type
 // Returns the decoded enhanced type or the original data if not an enhanced type
-func DecodeEnhancedType(data any, format string) (any, error) {
+func DecodeEnhancedType(data any, codec Codec) (any, error) {
 	typeStr, isEnhanced := IsEnhancedType(data)
 	if !isEnhanced {
 		return data, nil
 	}
-
-	// Get the codec for the format
-	codec := GetCodec(format)
 
 	// Re-encode and decode as specific type
 	encoded, err := codec.Marshal(data)

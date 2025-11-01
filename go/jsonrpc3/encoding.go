@@ -54,6 +54,7 @@ type Codec interface {
 	MessageEncoderFactory
 	Marshaller   // Legacy support for generic encoding
 	Unmarshaller // Legacy support for generic decoding
+	MimeType() string
 }
 
 // Legacy interfaces for generic encoding (kept for backward compatibility with RawMessage encoding)
@@ -79,6 +80,10 @@ func (c jsonCodec) Marshal(v any) ([]byte, error) {
 
 func (c jsonCodec) Unmarshal(data []byte, v any) error {
 	return json.Unmarshal(data, v)
+}
+
+func (c jsonCodec) MimeType() string {
+	return c.mimetype
 }
 
 // MarshalMessages marshals a MessageSet to JSON bytes.
@@ -177,6 +182,10 @@ func (c cborCodec) Unmarshal(data []byte, v any) error {
 	return cbor.Unmarshal(data, v)
 }
 
+func (c cborCodec) MimeType() string {
+	return c.mimetype
+}
+
 // MarshalMessages marshals a MessageSet to CBOR bytes.
 func (c cborCodec) MarshalMessages(msgs MessageSet) ([]byte, error) {
 	if !msgs.IsBatch {
@@ -265,6 +274,10 @@ func (c compactCBORCodec) Marshal(v any) ([]byte, error) {
 func (c compactCBORCodec) Unmarshal(data []byte, v any) error {
 	// CBOR unmarshaler handles both standard and compact formats
 	return cbor.Unmarshal(data, v)
+}
+
+func (c compactCBORCodec) MimeType() string {
+	return c.mimetype
 }
 
 // MarshalMessages marshals a MessageSet to compact CBOR bytes with integer keys.

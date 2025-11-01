@@ -32,8 +32,10 @@ func TestHTTPClient_Call(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Make call
+	val, err := client.Call("add", []int{1, 2, 3, 4, 5})
+	require.NoError(t, err)
 	var result int
-	err := client.Call("add", []int{1, 2, 3, 4, 5}, &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, 15, result)
 }
@@ -46,8 +48,7 @@ func TestHTTPClient_CallMethodNotFound(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, nil)
 
-	var result string
-	err := client.Call("nonexistent", nil, &result)
+	_, err := client.Call("nonexistent", nil)
 	require.Error(t, err)
 
 	// Should be a JSON-RPC error
@@ -236,8 +237,10 @@ func TestHTTPClient_CBOR(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 	client.SetContentType("application/cbor")
 
+	val, err := client.Call("echo", "hello world")
+	require.NoError(t, err)
 	var result string
-	err := client.Call("echo", "hello world", &result)
+	err = val.Decode(&result)
 	require.NoError(t, err)
 	assert.Equal(t, "hello world", result)
 }
@@ -251,8 +254,7 @@ func TestHTTPClient_HTTPError(t *testing.T) {
 
 	client := NewHTTPClient(server.URL, nil)
 
-	var result string
-	err := client.Call("test", nil, &result)
+	_, err := client.Call("test", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "HTTP error 500")
 }
@@ -292,7 +294,7 @@ func TestHTTPClient_NilResult(t *testing.T) {
 	client := NewHTTPClient(server.URL, nil)
 
 	// Call without result pointer (ignore result)
-	err := client.Call("test", nil, nil)
+	_, err := client.Call("test", nil)
 	require.NoError(t, err)
 }
 

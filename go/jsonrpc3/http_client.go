@@ -207,11 +207,11 @@ func (c *HTTPClient) shouldFallback(statusCode int) bool {
 	return statusCode == http.StatusUnsupportedMediaType || statusCode == http.StatusNotAcceptable
 }
 
-// Call invokes a JSON-RPC method and decodes the result into the provided value.
+// Call invokes a JSON-RPC method and returns a Value for lazy decoding.
 // Use the ToRef option to call a method on a remote object reference.
-// Returns an error if the call fails or if the server returns an error.
+// Returns a Value and an error. The Value can be decoded or inspected.
 // Automatically falls back to other formats if the server rejects the current format.
-func (c *HTTPClient) Call(method string, params any, result any, opts ...CallOption) error {
+func (c *HTTPClient) Call(method string, params any, opts ...CallOption) (Value, error) {
 	// Apply options
 	var options callOptions
 	for _, opt := range opts {
@@ -231,7 +231,7 @@ func (c *HTTPClient) Call(method string, params any, result any, opts ...CallOpt
 		// Create request with the current format
 		req, err := NewRequestWithFormat(method, params, c.generateID(), format)
 		if err != nil {
-			return fmt.Errorf("failed to create request: %w", err)
+			return Value{}, fmt.Errorf("failed to create request: %w", err)
 		}
 
 		if options.ref != nil {
@@ -243,7 +243,7 @@ func (c *HTTPClient) Call(method string, params any, result any, opts ...CallOpt
 		msgSet := req.ToMessageSet()
 		reqData, err := codec.MarshalMessages(msgSet)
 		if err != nil {
-			return fmt.Errorf("failed to encode request: %w", err)
+			return Value{}, fmt.Errorf("failed to encode request: %w", err)
 		}
 
 		// Send HTTP request
@@ -264,36 +264,36 @@ func (c *HTTPClient) Call(method string, params any, result any, opts ...CallOpt
 		if httpResp.StatusCode != http.StatusOK {
 			body, _ := io.ReadAll(httpResp.Body)
 			httpResp.Body.Close()
-			return fmt.Errorf("HTTP error %d: %s", httpResp.StatusCode, string(body))
+			return Value{}, fmt.Errorf("HTTP error %d: %s", httpResp.StatusCode, string(body))
 		}
 
 		// Check if response is SSE stream
 		responseContentType := httpResp.Header.Get("Content-Type")
 		if strings.HasPrefix(responseContentType, "text/event-stream") {
 			// Handle SSE response with notifications
-			return c.handleSSEResponse(httpResp, format, result)
+			return c.handleSSEResponse(httpResp, format, codec)
 		}
 
 		// Read response body
 		respData, err := io.ReadAll(httpResp.Body)
 		httpResp.Body.Close()
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return Value{}, fmt.Errorf("failed to read response: %w", err)
 		}
 
 		// Decode response
 		msgSet, err = codec.UnmarshalMessages(respData)
 		if err != nil {
-			return fmt.Errorf("failed to decode response: %w", err)
+			return Value{}, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		if len(msgSet.Messages) != 1 {
-			return fmt.Errorf("expected single response, got %d messages", len(msgSet.Messages))
+			return Value{}, fmt.Errorf("expected single response, got %d messages", len(msgSet.Messages))
 		}
 
 		resp := msgSet.Messages[0].ToResponse()
 		if resp == nil {
-			return fmt.Errorf("invalid response message")
+			return Value{}, fmt.Errorf("invalid response message")
 		}
 
 		// Success - update client's format preference for future requests
@@ -303,31 +303,27 @@ func (c *HTTPClient) Call(method string, params any, result any, opts ...CallOpt
 
 		// Check for RPC error
 		if resp.Error != nil {
-			return resp.Error
+			return Value{}, resp.Error
 		}
 
-		// Decode result if provided
-		if result != nil && resp.Result != nil {
-			params := NewParamsWithFormat(resp.Result, format)
-			if err := params.Decode(result); err != nil {
-				return fmt.Errorf("failed to decode result: %w", err)
-			}
+		// Return Value for lazy decoding
+		if resp.Result != nil {
+			return NewValueWithCodec(resp.Result, codec), nil
 		}
-
-		return nil
+		return NilValue, nil
 	}
 
 	// All formats failed
 	if lastErr != nil {
-		return lastErr
+		return Value{}, lastErr
 	}
-	return fmt.Errorf("all formats rejected by server")
+	return Value{}, fmt.Errorf("all formats rejected by server")
 }
 
 // handleSSEResponse processes an SSE (Server-Sent Events) response stream.
 // It reads notifications and the final result from the stream, dispatching
 // notifications to local callback objects registered via RegisterCallback.
-func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, result any) error {
+func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, codec Codec) (Value, error) {
 	defer httpResp.Body.Close()
 
 	// Update session ID from response header
@@ -335,7 +331,6 @@ func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, r
 		c.SetSessionID(sessionID)
 	}
 
-	codec := GetCodec(format)
 	scanner := bufio.NewScanner(httpResp.Body)
 
 	var finalResult *Response
@@ -377,27 +372,23 @@ func (c *HTTPClient) handleSSEResponse(httpResp *http.Response, format string, r
 	}
 
 	if err := scanner.Err(); err != nil {
-		return fmt.Errorf("error reading SSE stream: %w", err)
+		return Value{}, fmt.Errorf("error reading SSE stream: %w", err)
 	}
 
 	if finalResult == nil {
-		return fmt.Errorf("no final result received in SSE stream")
+		return Value{}, fmt.Errorf("no final result received in SSE stream")
 	}
 
 	// Check for RPC error
 	if finalResult.Error != nil {
-		return finalResult.Error
+		return Value{}, finalResult.Error
 	}
 
-	// Decode result if provided
-	if result != nil && finalResult.Result != nil {
-		params := NewParamsWithFormat(finalResult.Result, format)
-		if err := params.Decode(result); err != nil {
-			return fmt.Errorf("failed to decode result: %w", err)
-		}
+	// Return Value for lazy decoding
+	if finalResult.Result != nil {
+		return NewValueWithCodec(finalResult.Result, codec), nil
 	}
-
-	return nil
+	return NilValue, nil
 }
 
 // Notify sends a notification (no response expected).
