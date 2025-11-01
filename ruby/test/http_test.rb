@@ -110,4 +110,55 @@ class HttpTest < Minitest::Test
     assert_equal 3, resp1.result
     assert_equal 30, resp2.result
   end
+
+  def test_reference_convenience_call_method
+    @root.register("createCounter") do |_params|
+      counter = JSONRPC3::MethodMap.new
+      count = 0
+
+      counter.register("increment") { count += 1 }
+      counter.register("getValue") { count }
+
+      counter
+    end
+
+    # Create counter and get reference
+    counter_ref_hash = @client.call("createCounter")
+
+    # Convert hash to Reference object
+    counter_ref = JSONRPC3::Reference.from_h(counter_ref_hash)
+
+    # Use convenience call method
+    val1 = counter_ref.call(@client, "increment")
+    assert_equal 1, val1
+
+    val2 = counter_ref.call(@client, "increment")
+    assert_equal 2, val2
+
+    # Get value
+    final = counter_ref.call(@client, "getValue")
+    assert_equal 2, final
+  end
+
+  def test_reference_convenience_notify_method
+    @root.register("createCounter") do |_params|
+      counter = JSONRPC3::MethodMap.new
+      count = 0
+
+      counter.register("increment") { count += 1 }
+      counter.register("getValue") { count }
+
+      counter
+    end
+
+    # Create counter and get reference
+    counter_ref_hash = @client.call("createCounter")
+
+    # Convert hash to Reference object
+    counter_ref = JSONRPC3::Reference.from_h(counter_ref_hash)
+
+    # Use convenience notify method (should return nil)
+    result = counter_ref.notify(@client, "increment")
+    assert_nil result
+  end
 end

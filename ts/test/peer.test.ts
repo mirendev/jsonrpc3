@@ -259,14 +259,15 @@ describe("Peer", () => {
 
     const peer1 = new Peer(stream1.readable, stream1.writable, new MethodMap());
 
-    // Register objects without specifying ref IDs
+    // Register objects without specifying ref IDs (returns Reference instances)
     const ref1 = peer1.registerObject(obj1);
     const ref2 = peer1.registerObject(obj2);
 
-    // Refs should be auto-generated and different
+    // Reference instances should be different objects with different $ref IDs
     expect(ref1).toBeTruthy();
     expect(ref2).toBeTruthy();
     expect(ref1).not.toBe(ref2);
+    expect(ref1.$ref).not.toBe(ref2.$ref);
 
     peer1.close();
   });

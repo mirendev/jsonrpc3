@@ -222,19 +222,19 @@ func (c *WebSocketConn) Notify(ref string, method string, params any) error {
 
 // RegisterObject registers a server object that the client can call.
 // If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
-// Returns the reference ID that was used (either the provided one or the generated one).
-func (c *WebSocketConn) RegisterObject(ref string, obj Object) string {
+// Returns a Reference instance that can be used to identify the object.
+func (c *WebSocketConn) RegisterObject(ref string, obj Object) Reference {
 	if ref == "" {
 		counter := c.refCounter.Add(1)
 		ref = fmt.Sprintf("%s-%d", c.refPrefix, counter)
 	}
 	c.handler.session.AddLocalRef(ref, obj)
-	return ref
+	return NewReference(ref)
 }
 
 // UnregisterObject removes a registered server object.
-func (c *WebSocketConn) UnregisterObject(ref string) {
-	c.handler.session.RemoveLocalRef(ref)
+func (c *WebSocketConn) UnregisterObject(ref Reference) {
+	c.handler.session.RemoveLocalRef(ref.Ref)
 }
 
 // GetSession returns the connection's session.

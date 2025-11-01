@@ -73,12 +73,14 @@ module JSONRPC3
 
     # Register a local object
     def register_object(obj, ref = nil)
-      @session.add_local_ref(ref || obj, ref ? obj : nil)
+      ref_string = @session.add_local_ref(ref || obj, ref ? obj : nil)
+      Reference.new(ref: ref_string)
     end
 
     # Unregister a local object
     def unregister_object(ref)
-      @session.remove_local_ref(ref)
+      ref_string = ref.is_a?(Reference) ? ref.ref : ref
+      @session.remove_local_ref(ref_string)
     end
 
     # Close the peer

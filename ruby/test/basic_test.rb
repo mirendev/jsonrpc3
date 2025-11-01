@@ -24,6 +24,54 @@ class BasicTest < Minitest::Test
     refute JSONRPC3.reference?(not_ref)
   end
 
+  def test_reference_call_convenience_method
+    ref = JSONRPC3::Reference.new(ref: "test-ref")
+
+    # Create a mock caller
+    mock_caller = Minitest::Mock.new
+    mock_caller.expect(:call, "result", ["test_method", { "a" => 1 }, ref])
+
+    result = ref.call(mock_caller, "test_method", { "a" => 1 })
+    assert_equal "result", result
+    mock_caller.verify
+  end
+
+  def test_reference_call_convenience_method_without_params
+    ref = JSONRPC3::Reference.new(ref: "test-ref")
+
+    # Create a mock caller
+    mock_caller = Minitest::Mock.new
+    mock_caller.expect(:call, "result", ["test_method", nil, ref])
+
+    result = ref.call(mock_caller, "test_method")
+    assert_equal "result", result
+    mock_caller.verify
+  end
+
+  def test_reference_notify_convenience_method
+    ref = JSONRPC3::Reference.new(ref: "test-ref")
+
+    # Create a mock caller
+    mock_caller = Minitest::Mock.new
+    mock_caller.expect(:notify, nil, ["test_method", { "a" => 1 }, ref])
+
+    result = ref.notify(mock_caller, "test_method", { "a" => 1 })
+    assert_nil result
+    mock_caller.verify
+  end
+
+  def test_reference_notify_convenience_method_without_params
+    ref = JSONRPC3::Reference.new(ref: "test-ref")
+
+    # Create a mock caller
+    mock_caller = Minitest::Mock.new
+    mock_caller.expect(:notify, nil, ["test_method", nil, ref])
+
+    result = ref.notify(mock_caller, "test_method")
+    assert_nil result
+    mock_caller.verify
+  end
+
   def test_new_request
     req = JSONRPC3.new_request("test_method", { "a" => 1 }, 123, nil)
     assert_equal "3.0", req.jsonrpc

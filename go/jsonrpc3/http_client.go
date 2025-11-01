@@ -151,16 +151,16 @@ func (c *HTTPClient) UnregisterCallback(ref string) {
 
 // RegisterObject registers a local object that the server can invoke.
 // This is an alias for RegisterCallback to conform to the Caller interface.
-// Returns the reference that was used.
-func (c *HTTPClient) RegisterObject(ref string, obj Object) string {
+// Returns a Reference instance that can be used to identify the object.
+func (c *HTTPClient) RegisterObject(ref string, obj Object) Reference {
 	c.RegisterCallback(ref, obj)
-	return ref
+	return NewReference(ref)
 }
 
 // UnregisterObject removes a previously registered local object.
 // This is an alias for UnregisterCallback to conform to the Caller interface.
-func (c *HTTPClient) UnregisterObject(ref string) {
-	c.UnregisterCallback(ref)
+func (c *HTTPClient) UnregisterObject(ref Reference) {
+	c.UnregisterCallback(ref.Ref)
 }
 
 // generateID generates a unique request ID.

@@ -14,16 +14,16 @@ export const Version30 = "3.0";
 export type RequestId = string | number | null;
 
 /**
- * Reference represents an object reference in wire format
+ * ReferenceType represents an object reference in wire format
  */
-export interface Reference {
+export interface ReferenceType {
   $ref: string;
 }
 
 /**
  * Check if a value is a Reference
  */
-export function isReference(value: unknown): value is Reference {
+export function isReference(value: unknown): value is ReferenceType {
   return (
     typeof value === "object" &&
     value !== null &&
@@ -32,6 +32,67 @@ export function isReference(value: unknown): value is Reference {
     Object.keys(value).length === 1
   );
 }
+
+/**
+ * Convert a Reference or string to a Reference object
+ */
+export function toRef(ref: string | ReferenceType): ReferenceType {
+  if (typeof ref === "string") {
+    return { $ref: ref };
+  }
+  return ref;
+}
+
+/**
+ * Caller interface for making RPC calls
+ */
+export interface Caller {
+  call(method: string, params?: unknown, ref?: string | ReferenceType): Promise<unknown>;
+  notify(method: string, params?: unknown, ref?: string | ReferenceType): Promise<void>;
+}
+
+/**
+ * Reference provides convenience methods for calling methods on a reference
+ */
+export class Reference implements ReferenceType {
+  $ref: string;
+
+  constructor(ref: string | ReferenceType) {
+    if (typeof ref === "string") {
+      this.$ref = ref;
+    } else {
+      this.$ref = ref.$ref;
+    }
+  }
+
+  /**
+   * Call a method on this reference using the provided Caller
+   */
+  async call(caller: Caller, method: string, params?: unknown): Promise<unknown> {
+    return caller.call(method, params, toRef(this));
+  }
+
+  /**
+   * Send a notification to this reference using the provided Caller
+   */
+  async notify(caller: Caller, method: string, params?: unknown): Promise<void> {
+    return caller.notify(method, params, toRef(this));
+  }
+
+  /**
+   * Convert to plain ReferenceType object
+   */
+  toJSON(): ReferenceType {
+    return { $ref: this.$ref };
+  }
+}
+
+/**
+ * Protocol is the special reference used for protocol introspection methods.
+ * Use this to call protocol methods like session_id, list_refs, etc.
+ * Example: Protocol.call(caller, "session_id")
+ */
+export const Protocol = new Reference("$rpc");
 
 /**
  * JSON-RPC Request

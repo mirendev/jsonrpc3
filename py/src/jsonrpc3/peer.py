@@ -10,6 +10,7 @@ from .session import Session
 from .types import (
     MIME_TYPE_JSON,
     MessageSet,
+    Reference,
     batch_response_to_message_set,
     is_reference,
     is_request,
@@ -135,16 +136,18 @@ class Peer:
         msg_set = MessageSet(messages=[req.to_dict()], is_batch=False)
         await self._write_message(msg_set)
 
-    def register_object(self, obj: Any, ref: Optional[str] = None) -> str:
+    def register_object(self, obj: Any, ref: Optional[str] = None) -> Reference:
         """Register a local object."""
         if ref:
-            return self.session.add_local_ref(ref, obj)
+            ref_string = self.session.add_local_ref(ref, obj)
         else:
-            return self.session.add_local_ref(obj)
+            ref_string = self.session.add_local_ref(obj)
+        return Reference(ref=ref_string)
 
-    def unregister_object(self, ref: str) -> bool:
+    def unregister_object(self, ref: Union[str, Reference]) -> bool:
         """Unregister a local object."""
-        return self.session.remove_local_ref(ref)
+        ref_string = ref.ref if isinstance(ref, Reference) else ref
+        return self.session.remove_local_ref(ref_string)
 
     async def close(self) -> None:
         """Close the peer."""

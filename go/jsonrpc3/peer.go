@@ -223,19 +223,19 @@ func (p *Peer) Notify(method string, params any, opts ...CallOption) error {
 
 // RegisterObject registers a local object that the remote peer can call.
 // If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
-// Returns the reference ID that was used (either the provided one or the generated one).
-func (p *Peer) RegisterObject(ref string, obj Object) string {
+// Returns a Reference instance that can be used to identify the object.
+func (p *Peer) RegisterObject(ref string, obj Object) Reference {
 	if ref == "" {
 		counter := p.refCounter.Add(1)
 		ref = fmt.Sprintf("%s-%d", p.refPrefix, counter)
 	}
 	p.handler.session.AddLocalRef(ref, obj)
-	return ref
+	return NewReference(ref)
 }
 
 // UnregisterObject removes a registered local object.
-func (p *Peer) UnregisterObject(ref string) {
-	p.handler.session.RemoveLocalRef(ref)
+func (p *Peer) UnregisterObject(ref Reference) {
+	p.handler.session.RemoveLocalRef(ref.Ref)
 }
 
 // CallBatch sends a batch of requests and returns the results.

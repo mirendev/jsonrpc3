@@ -6,13 +6,14 @@
 // Types
 export type {
   RequestId,
-  Reference,
+  ReferenceType,
   Request,
   Response,
   Message,
   MessageSet,
   Batch,
   BatchResponse,
+  Caller,
 } from "./types.ts";
 
 export {
@@ -28,6 +29,9 @@ export {
   toRequest,
   toBatch,
   batchResponseToMessageSet,
+  toRef,
+  Reference,
+  Protocol,
 } from "./types.ts";
 
 // Errors

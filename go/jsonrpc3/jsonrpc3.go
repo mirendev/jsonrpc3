@@ -362,6 +362,11 @@ func (r Reference) Call(caller Caller, method string, params any, result any) er
 	return caller.Call(method, params, result, ToRef(r))
 }
 
+// Notify sends a notification to the remote reference using the provided Caller.
+func (r Reference) Notify(caller Caller, method string, params any) error {
+	return caller.Notify(method, params, ToRef(r))
+}
+
 // Protocol is the special reference used for protocol introspection methods.
 // Use this with ToRef() to call protocol methods like session_id, list_refs, etc.
 // Example: caller.Call("session_id", nil, &result, ToRef(Protocol))

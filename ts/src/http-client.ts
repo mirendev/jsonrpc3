@@ -3,13 +3,44 @@
  */
 
 import type { Session } from "./session.ts";
-import type { Batch, BatchResponse, Request, Response, Reference } from "./types.ts";
-import { newRequest, toRequest, isReference } from "./types.ts";
+import type { Batch, BatchResponse, Request, Response, ReferenceType } from "./types.ts";
+import { newRequest, toRequest, isReference, Reference } from "./types.ts";
 import { getCodec, MimeTypeJSON } from "./encoding.ts";
 import { RpcError } from "./error.ts";
 
 export interface HttpClientOptions {
   mimeType?: string;
+}
+
+/**
+ * Promote ReferenceType objects to Reference class instances
+ * This allows calling methods directly on returned references
+ */
+function promoteReferences(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  // If it's a reference, promote to Reference class
+  if (isReference(value)) {
+    return new Reference(value);
+  }
+
+  // Recursively handle arrays
+  if (Array.isArray(value)) {
+    return value.map(item => promoteReferences(item));
+  }
+
+  // Recursively handle plain objects
+  if (typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      result[key] = promoteReferences(val);
+    }
+    return result;
+  }
+
+  return value;
 }
 
 /**
@@ -90,7 +121,8 @@ export class HttpClient {
     // Track remote references
     this.trackRemoteReferences(resp.result);
 
-    return resp.result;
+    // Promote ReferenceType objects to Reference class instances
+    return promoteReferences(resp.result);
   }
 
   /**
@@ -171,11 +203,14 @@ export class HttpClient {
     const responses: BatchResponse = [];
     for (const msg of respMsgSet.messages) {
       if ("result" in msg || "error" in msg) {
-        responses.push(msg as Response);
+        const resp = msg as Response;
         // Track remote references from each result
-        if ("result" in msg) {
-          this.trackRemoteReferences(msg.result);
+        if ("result" in resp && resp.result !== undefined) {
+          this.trackRemoteReferences(resp.result);
+          // Promote ReferenceType objects to Reference class instances
+          resp.result = promoteReferences(resp.result);
         }
+        responses.push(resp);
       }
     }
 

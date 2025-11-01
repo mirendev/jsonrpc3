@@ -22,6 +22,7 @@ from jsonrpc3 import (
     JsonCodec,
     NULL_PARAMS,
     new_params,
+    to_ref,
 )
 
 
@@ -322,3 +323,124 @@ def test_json_codec_marshal():
     parsed = json.loads(json_bytes)
     assert parsed["method"] == "test"
     assert parsed["id"] == 123
+
+
+def test_to_ref_from_string():
+    """Test to_ref() with a string."""
+    ref = to_ref("test-ref")
+    assert isinstance(ref, Reference)
+    assert ref.ref == "test-ref"
+
+
+def test_to_ref_from_reference():
+    """Test to_ref() with a Reference object."""
+    original = Reference(ref="test-ref")
+    ref = to_ref(original)
+    assert ref is original
+    assert ref.ref == "test-ref"
+
+
+def test_reference_call_convenience():
+    """Test Reference.call() convenience method."""
+    # Create a mock caller
+    class MockCaller:
+        def __init__(self):
+            self.last_call = None
+
+        def call(self, method, params=None, ref=None):
+            self.last_call = {"method": method, "params": params, "ref": ref}
+            return {"result": "success"}
+
+    caller = MockCaller()
+    ref = Reference(ref="test-ref")
+
+    # Call method using convenience method
+    result = ref.call(caller, "testMethod", {"param": "value"})
+
+    # Verify the call was made correctly
+    assert caller.last_call is not None
+    assert caller.last_call["method"] == "testMethod"
+    assert caller.last_call["params"] == {"param": "value"}
+    assert caller.last_call["ref"] is ref
+    assert result == {"result": "success"}
+
+
+def test_reference_notify_convenience():
+    """Test Reference.notify() convenience method."""
+    # Create a mock caller
+    class MockCaller:
+        def __init__(self):
+            self.last_notify = None
+
+        def notify(self, method, params=None, ref=None):
+            self.last_notify = {"method": method, "params": params, "ref": ref}
+
+    caller = MockCaller()
+    ref = Reference(ref="test-ref")
+
+    # Send notification using convenience method
+    ref.notify(caller, "notifyMethod", {"param": "value"})
+
+    # Verify the notification was sent correctly
+    assert caller.last_notify is not None
+    assert caller.last_notify["method"] == "notifyMethod"
+    assert caller.last_notify["params"] == {"param": "value"}
+    assert caller.last_notify["ref"] is ref
+
+
+def test_reference_async_call_convenience():
+    """Test Reference.async_call() convenience method."""
+    import asyncio
+
+    # Create a mock async caller
+    class MockAsyncCaller:
+        def __init__(self):
+            self.last_call = None
+
+        async def call(self, method, params=None, ref=None):
+            self.last_call = {"method": method, "params": params, "ref": ref}
+            return {"result": "async_success"}
+
+    async def run_test():
+        caller = MockAsyncCaller()
+        ref = Reference(ref="test-ref")
+
+        # Call method using async convenience method
+        result = await ref.async_call(caller, "asyncMethod", {"param": "value"})
+
+        # Verify the call was made correctly
+        assert caller.last_call is not None
+        assert caller.last_call["method"] == "asyncMethod"
+        assert caller.last_call["params"] == {"param": "value"}
+        assert caller.last_call["ref"] is ref
+        assert result == {"result": "async_success"}
+
+    asyncio.run(run_test())
+
+
+def test_reference_async_notify_convenience():
+    """Test Reference.async_notify() convenience method."""
+    import asyncio
+
+    # Create a mock async caller
+    class MockAsyncCaller:
+        def __init__(self):
+            self.last_notify = None
+
+        async def notify(self, method, params=None, ref=None):
+            self.last_notify = {"method": method, "params": params, "ref": ref}
+
+    async def run_test():
+        caller = MockAsyncCaller()
+        ref = Reference(ref="test-ref")
+
+        # Send notification using async convenience method
+        await ref.async_notify(caller, "asyncNotify", {"param": "value"})
+
+        # Verify the notification was sent correctly
+        assert caller.last_notify is not None
+        assert caller.last_notify["method"] == "asyncNotify"
+        assert caller.last_notify["params"] == {"param": "value"}
+        assert caller.last_notify["ref"] is ref
+
+    asyncio.run(run_test())

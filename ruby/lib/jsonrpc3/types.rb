@@ -14,6 +14,24 @@ module JSONRPC3
     def self.from_h(hash)
       new(ref: hash["$ref"] || hash[:$ref])
     end
+
+    # Call a method on this reference using the provided caller
+    # @param caller [Object] The caller object (Peer, HttpClient, etc.) that implements call()
+    # @param method [String] The method name to call
+    # @param params [Object] The parameters to pass to the method
+    # @return [Object] The result of the method call
+    def call(caller, method, params = nil)
+      caller.call(method, params, self)
+    end
+
+    # Send a notification to this reference using the provided caller
+    # @param caller [Object] The caller object (Peer, HttpClient, etc.) that implements notify()
+    # @param method [String] The method name to call
+    # @param params [Object] The parameters to pass to the method
+    # @return [nil]
+    def notify(caller, method, params = nil)
+      caller.notify(method, params, self)
+    end
   end
 
   # Check if value is a Reference

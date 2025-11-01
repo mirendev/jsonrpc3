@@ -337,19 +337,19 @@ func (c *WebTransportClient) CallBatch(batchReqs []BatchRequest) (*BatchResults,
 
 // RegisterObject registers a local object that the server can call.
 // If ref is empty, a reference ID is auto-generated using the connection's prefix and counter.
-// Returns the reference ID that was used (either the provided one or the generated one).
-func (c *WebTransportClient) RegisterObject(ref string, obj Object) string {
+// Returns a Reference instance that can be used to identify the object.
+func (c *WebTransportClient) RegisterObject(ref string, obj Object) Reference {
 	if ref == "" {
 		counter := c.refCounter.Add(1)
 		ref = fmt.Sprintf("%s-%d", c.refPrefix, counter)
 	}
 	c.handler.session.AddLocalRef(ref, obj)
-	return ref
+	return NewReference(ref)
 }
 
 // UnregisterObject removes a registered local object.
-func (c *WebTransportClient) UnregisterObject(ref string) {
-	c.handler.session.RemoveLocalRef(ref)
+func (c *WebTransportClient) UnregisterObject(ref Reference) {
+	c.handler.session.RemoveLocalRef(ref.Ref)
 }
 
 // GetSession returns the client's session.

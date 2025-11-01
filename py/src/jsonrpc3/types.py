@@ -24,6 +24,73 @@ class Reference:
         """Create from dictionary representation."""
         return cls(ref=data["$ref"])
 
+    def call(self, caller: Any, method: str, params: Any = None) -> Any:
+        """Call a method on this reference using the provided caller.
+
+        This is a convenience wrapper that calls caller.call(method, params, ref=self).
+        For synchronous callers (like HttpClient), this blocks until the response is received.
+        For async callers (like Peer), use async_call() instead.
+
+        Args:
+            caller: A caller object with a call() method (e.g., HttpClient)
+            method: The method name to call
+            params: Optional parameters for the method
+
+        Returns:
+            The result of the method call
+
+        Raises:
+            RpcError: If the remote returns an error
+        """
+        return caller.call(method, params, ref=self)
+
+    async def async_call(self, caller: Any, method: str, params: Any = None) -> Any:
+        """Call a method on this reference using an async caller.
+
+        This is a convenience wrapper for async callers like Peer.
+        It calls await caller.call(method, params, ref=self).
+
+        Args:
+            caller: An async caller object with a call() method (e.g., Peer)
+            method: The method name to call
+            params: Optional parameters for the method
+
+        Returns:
+            The result of the method call
+
+        Raises:
+            RpcError: If the remote returns an error
+        """
+        return await caller.call(method, params, ref=self)
+
+    def notify(self, caller: Any, method: str, params: Any = None) -> None:
+        """Send a notification to this reference using the provided caller.
+
+        This is a convenience wrapper that calls caller.notify(method, params, ref=self).
+        Notifications do not expect a response.
+        For synchronous callers (like HttpClient), this returns immediately.
+        For async callers (like Peer), use async_notify() instead.
+
+        Args:
+            caller: A caller object with a notify() method (e.g., HttpClient)
+            method: The method name to notify
+            params: Optional parameters for the notification
+        """
+        caller.notify(method, params, ref=self)
+
+    async def async_notify(self, caller: Any, method: str, params: Any = None) -> None:
+        """Send a notification to this reference using an async caller.
+
+        This is a convenience wrapper for async callers like Peer.
+        It calls await caller.notify(method, params, ref=self).
+
+        Args:
+            caller: An async caller object with a notify() method (e.g., Peer)
+            method: The method name to notify
+            params: Optional parameters for the notification
+        """
+        await caller.notify(method, params, ref=self)
+
 
 @dataclass
 class Request:
@@ -117,6 +184,20 @@ class MessageSet:
 def reference(ref: str) -> dict:
     """Create a reference dictionary."""
     return {"$ref": ref}
+
+
+def to_ref(ref: Union[str, Reference]) -> Reference:
+    """Convert a string or Reference to a Reference object.
+
+    Args:
+        ref: Either a reference string or a Reference object
+
+    Returns:
+        A Reference object
+    """
+    if isinstance(ref, Reference):
+        return ref
+    return Reference(ref=ref)
 
 
 def new_request(

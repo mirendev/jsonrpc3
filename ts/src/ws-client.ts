@@ -5,8 +5,8 @@
 
 import { nanoid } from "nanoid";
 import type { Session, RpcObject } from "./session.ts";
-import type { Request, Response, MessageSet, BatchResponse, Reference, RequestId } from "./types.ts";
-import { newRequest, isReference, isNotification, toBatch, batchResponseToMessageSet } from "./types.ts";
+import type { Request, Response, MessageSet, BatchResponse, ReferenceType, RequestId } from "./types.ts";
+import { newRequest, isReference, isNotification, toBatch, batchResponseToMessageSet, Reference } from "./types.ts";
 import { Handler } from "./handler.ts";
 import { getCodec, MimeTypeJSON, type Codec } from "./encoding.ts";
 import { RpcError } from "./error.ts";
@@ -20,6 +20,37 @@ export interface WsClientOptions {
 interface PendingRequest {
   resolve: (value: unknown) => void;
   reject: (error: Error) => void;
+}
+
+/**
+ * Promote ReferenceType objects to Reference class instances
+ * This allows calling methods directly on returned references
+ */
+function promoteReferences(value: unknown): unknown {
+  if (value === null || value === undefined) {
+    return value;
+  }
+
+  // If it's a reference, promote to Reference class
+  if (isReference(value)) {
+    return new Reference(value);
+  }
+
+  // Recursively handle arrays
+  if (Array.isArray(value)) {
+    return value.map(item => promoteReferences(item));
+  }
+
+  // Recursively handle plain objects
+  if (typeof value === "object") {
+    const result: Record<string, unknown> = {};
+    for (const [key, val] of Object.entries(value)) {
+      result[key] = promoteReferences(val);
+    }
+    return result;
+  }
+
+  return value;
 }
 
 /**
@@ -121,9 +152,9 @@ export class WsClient {
     const responsePromise = new Promise<unknown>((resolve, reject) => {
       this.pendingRequests.set(id, {
         resolve: (value) => {
-          // Extract result from Response if needed
+          // Extract result from Response and promote references
           const resp = value as Response;
-          resolve(resp.result);
+          resolve(promoteReferences(resp.result));
         },
         reject,
       });
@@ -202,20 +233,21 @@ export class WsClient {
   /**
    * Register a local object that the remote peer can call
    */
-  registerObject(obj: RpcObject, ref?: string): string {
+  registerObject(obj: RpcObject, ref?: string): Reference {
     if (!ref) {
       this.refCounter++;
       ref = `${this.refPrefix}-${this.refCounter}`;
     }
     this.session.addLocalRef(ref, obj);
-    return ref;
+    return new Reference(ref);
   }
 
   /**
    * Unregister a local object
    */
-  unregisterObject(ref: string): boolean {
-    return this.session.removeLocalRef(ref);
+  unregisterObject(ref: string | ReferenceType): boolean {
+    const refString = typeof ref === "string" ? ref : ref.$ref;
+    return this.session.removeLocalRef(refString);
   }
 
   /**
@@ -378,6 +410,8 @@ export class WsClient {
     } else {
       // Track remote references
       this.trackRemoteReferences(resp.result);
+      // Promote ReferenceType objects to Reference class instances
+      resp.result = promoteReferences(resp.result);
       // Resolve with full response for batch, or just result for single calls
       pending.resolve(resp);
     }

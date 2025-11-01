@@ -41,11 +41,11 @@ type Caller interface {
 
 	// RegisterObject registers a local object that the remote peer can call.
 	// If ref is empty, a random reference ID is generated.
-	// Returns the reference ID that was used (either the provided one or the generated one).
-	RegisterObject(ref string, obj Object) string
+	// Returns a Reference instance that can be used to identify the object.
+	RegisterObject(ref string, obj Object) Reference
 
 	// UnregisterObject removes a registered local object.
-	UnregisterObject(ref string)
+	UnregisterObject(ref Reference)
 
 	// GetSession returns the session for managing remote references.
 	GetSession() *Session
