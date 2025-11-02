@@ -175,123 +175,63 @@ class BasicTest < Minitest::Test
     map = JSONRPC3::MethodMap.new
     map.type = "Counter"
 
-    map.register("increment") { 1 }
+    map.register("increment",
+                 description: "Increments the counter",
+                 category: "counter") { |params, caller| 1 }
+
+    map.register("decrement") { |params, caller| -1 }
 
     type = map.call_method("$type", JSONRPC3::NULL_PARAMS, JSONRPC3::NoOpCaller.new)
     assert_equal "Counter", type
 
     methods = map.call_method("$methods", JSONRPC3::NULL_PARAMS, JSONRPC3::NoOpCaller.new)
-    assert_includes methods, "increment"
-    assert_includes methods, "$type"
-    assert_includes methods, "$methods"
-    assert_includes methods, "$method"
+    assert_kind_of Array, methods
+    assert methods.size >= 4 # increment, decrement, $methods, $type
+
+    # Find increment method
+    increment_method = methods.find { |m| m["name"] == "increment" }
+    assert increment_method, "increment method should be in result"
+    assert_equal "Increments the counter", increment_method["description"]
+    assert_equal "counter", increment_method["category"]
+
+    # Find decrement method (no metadata)
+    decrement_method = methods.find { |m| m["name"] == "decrement" }
+    assert decrement_method, "decrement method should be in result"
+    assert_equal "decrement", decrement_method["name"]
+    refute decrement_method.key?("description")
+    refute decrement_method.key?("category")
+
+    # Verify introspection methods are included
+    assert methods.any? { |m| m["name"] == "$methods" }
+    assert methods.any? { |m| m["name"] == "$type" }
   end
 
-  def test_method_map_method_info_basic
+  def test_method_map_with_positional_params
     map = JSONRPC3::MethodMap.new
 
-    map.register("add") do |params|
+    map.register("multiply",
+                 description: "Multiplies numbers",
+                 params: ["number", "number", "...number"],
+                 category: "math") do |params, caller|
       data = params.decode
-      data["a"] + data["b"]
+      data.reduce(1, :*)
     end
 
-    params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
+    methods = map.call_method("$methods", JSONRPC3::NULL_PARAMS, JSONRPC3::NoOpCaller.new)
 
-    assert_equal "add", info["name"]
-    refute info.key?("description")
-    refute info.key?("params")
-  end
-
-  def test_method_map_method_info_with_description
-    map = JSONRPC3::MethodMap.new
-
-    map.register("add", description: "Adds two numbers") do |params|
-      data = params.decode
-      data["a"] + data["b"]
-    end
-
-    params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
-
-    assert_equal "add", info["name"]
-    assert_equal "Adds two numbers", info["description"]
-  end
-
-  def test_method_map_method_info_with_named_params
-    map = JSONRPC3::MethodMap.new
-
-    map.register("add",
-                 description: "Adds two numbers",
-                 params: { "a" => "number", "b" => "number" }) do |params|
-      data = params.decode
-      data["a"] + data["b"]
-    end
-
-    params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
-
-    assert_equal "add", info["name"]
-    assert_equal "Adds two numbers", info["description"]
-    assert_equal({ "a" => "number", "b" => "number" }, info["params"])
-  end
-
-  def test_method_map_method_info_with_positional_params
-    map = JSONRPC3::MethodMap.new
-
-    map.register("add",
-                 description: "Adds two numbers",
-                 params: ["number", "number"]) do |params|
-      data = params.decode
-      data[0] + data[1]
-    end
-
-    params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
-
-    assert_equal "add", info["name"]
-    assert_equal "Adds two numbers", info["description"]
-    assert_equal ["number", "number"], info["params"]
-  end
-
-  def test_method_map_method_info_nonexistent
-    map = JSONRPC3::MethodMap.new
-
-    map.register("add") do |params|
-      data = params.decode
-      data["a"] + data["b"]
-    end
-
-    params = JSONRPC3.new_params("subtract")
-    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
-
-    assert_nil info
-  end
-
-  def test_method_map_method_info_invalid_params
-    map = JSONRPC3::MethodMap.new
-
-    map.register("add") do |params|
-      data = params.decode
-      data["a"] + data["b"]
-    end
-
-    # Pass a number instead of a string
-    params = JSONRPC3.new_params(123)
-
-    error = assert_raises(JSONRPC3::RpcError) do
-      map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
-    end
-
-    assert_equal JSONRPC3::CODE_INVALID_PARAMS, error.code
-    assert_match(/string parameter/, error.message)
+    # Find multiply method
+    multiply_method = methods.find { |m| m["name"] == "multiply" }
+    assert multiply_method, "multiply method should be in result"
+    assert_equal "Multiplies numbers", multiply_method["description"]
+    assert_equal "math", multiply_method["category"]
+    assert_equal ["number", "number", "...number"], multiply_method["params"]
   end
 
   def test_method_map_backwards_compatibility
     # Test that register still works without optional parameters
     map = JSONRPC3::MethodMap.new
 
-    map.register("add") do |params|
+    map.register("add") do |params, caller|
       data = params.decode
       data["a"] + data["b"]
     end
@@ -300,11 +240,6 @@ class BasicTest < Minitest::Test
     params = JSONRPC3.new_params({ "a" => 5, "b" => 3 })
     result = map.call_method("add", params, JSONRPC3::NoOpCaller.new)
     assert_equal 8, result
-
-    # Should have basic info
-    info_params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", info_params, JSONRPC3::NoOpCaller.new)
-    assert_equal "add", info["name"]
   end
 
   def test_json_codec_single_message

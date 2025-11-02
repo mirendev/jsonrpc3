@@ -229,27 +229,20 @@ class TestCrossLanguageWebSocket:
             # Query available methods
             methods = await client.call("$methods")
             assert isinstance(methods, list)
-            assert "add" in methods
-            assert "echo" in methods
-            assert "createCounter" in methods
-            assert "$methods" in methods
-            assert "$type" in methods
-            assert "$method" in methods
-        finally:
-            await client.close()
 
-    @pytest.mark.asyncio
-    async def test_python_ws_client_can_query_go_server_method_info(self):
-        """Test querying method info via WebSocket."""
-        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
-        await client.connect()
+            # Verify methods is an array of objects
+            method_names = [m["name"] for m in methods]
+            assert "add" in method_names
+            assert "echo" in method_names
+            assert "createCounter" in method_names
+            assert "$methods" in method_names
+            assert "$type" in method_names
 
-        try:
-            # Query info for 'add' method
-            info = await client.call("$method", "add")
-            assert info["name"] == "add"
-            assert info["description"] == "Adds a list of numbers"
-            assert info["params"] == ["number"]
+            # Find add method and check it has metadata
+            add_method = next((m for m in methods if m["name"] == "add"), None)
+            assert add_method is not None
+            assert add_method["description"] == "Adds a list of numbers"
+            assert add_method["params"] == ["number"]
         finally:
             await client.close()
 
@@ -271,13 +264,14 @@ class TestCrossLanguageWebSocket:
 
             # Query counter's methods
             methods = await client.call("$methods", None, counter_ref)
-            assert "increment" in methods
-            assert "getValue" in methods
+            method_names = [m["name"] for m in methods]
+            assert "increment" in method_names
+            assert "getValue" in method_names
 
-            # Query counter's method info
-            info = await client.call("$method", "increment", counter_ref)
-            assert info["name"] == "increment"
-            assert info["description"] == "Increments the counter by 1"
+            # Verify increment method has metadata
+            increment_method = next((m for m in methods if m["name"] == "increment"), None)
+            assert increment_method is not None
+            assert increment_method["description"] == "Increments the counter by 1"
         finally:
             await client.close()
 

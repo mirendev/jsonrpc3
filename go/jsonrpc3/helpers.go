@@ -5,12 +5,13 @@ type MethodInfo struct {
 	Name        string
 	Description string
 	Params      any // Can be map[string]string for named params or []string for positional params
+	Category    string
 	handler     func(params Params, caller Caller) (any, error)
 }
 
 // MethodMap is a simple Object implementation that dispatches methods to functions.
 // This is useful for creating simple handlers and for testing.
-// It automatically supports the optional $methods, $type, and $method introspection methods.
+// It automatically supports the optional $methods and $type introspection methods.
 type MethodMap struct {
 	methods map[string]*MethodInfo
 	Type    string // Optional type identifier for $type introspection
@@ -43,6 +44,14 @@ func WithPositionalParams(params []string) RegisterOption {
 	}
 }
 
+// WithCategory sets the category for a method.
+// Example: WithCategory("math")
+func WithCategory(category string) RegisterOption {
+	return func(info *MethodInfo) {
+		info.Category = category
+	}
+}
+
 // NewMethodMap creates a new MethodMap.
 func NewMethodMap() *MethodMap {
 	return &MethodMap{
@@ -72,7 +81,7 @@ func (m *MethodMap) Register(method string, fn func(params Params, caller Caller
 }
 
 // CallMethod implements the Object interface.
-// It automatically handles the $methods, $type, and $method introspection methods.
+// It automatically handles the $methods and $type introspection methods.
 func (m *MethodMap) CallMethod(method string, params Params, caller Caller) (any, error) {
 	// Handle introspection methods
 	switch method {
@@ -80,8 +89,6 @@ func (m *MethodMap) CallMethod(method string, params Params, caller Caller) (any
 		return m.getMethods(), nil
 	case "$type":
 		return m.getType(), nil
-	case "$method":
-		return m.getMethodInfo(params)
 	}
 
 	info, exists := m.methods[method]
@@ -91,17 +98,36 @@ func (m *MethodMap) CallMethod(method string, params Params, caller Caller) (any
 	return info.handler(params, caller)
 }
 
-// getMethods returns a list of all method names supported by this object.
-func (m *MethodMap) getMethods() []string {
-	methods := make([]string, 0, len(m.methods)+3)
+// getMethods returns detailed information about all methods supported by this object.
+func (m *MethodMap) getMethods() []map[string]any {
+	methods := make([]map[string]any, 0, len(m.methods)+2)
 
 	// Add user-registered methods
-	for name := range m.methods {
-		methods = append(methods, name)
+	for _, info := range m.methods {
+		methodInfo := map[string]any{
+			"name": info.Name,
+		}
+
+		if info.Description != "" {
+			methodInfo["description"] = info.Description
+		}
+
+		if info.Params != nil {
+			methodInfo["params"] = info.Params
+		}
+
+		if info.Category != "" {
+			methodInfo["category"] = info.Category
+		}
+
+		methods = append(methods, methodInfo)
 	}
 
 	// Add introspection methods
-	methods = append(methods, "$methods", "$type", "$method")
+	methods = append(methods,
+		map[string]any{"name": "$methods"},
+		map[string]any{"name": "$type"},
+	)
 
 	return methods
 }
@@ -112,33 +138,4 @@ func (m *MethodMap) getType() string {
 		return m.Type
 	}
 	return "MethodMap"
-}
-
-// getMethodInfo returns detailed information about a specific method.
-// Implements the $method introspection method.
-func (m *MethodMap) getMethodInfo(params Params) (any, error) {
-	var methodName string
-	if err := params.Decode(&methodName); err != nil {
-		return nil, NewInvalidParamsError("$method expects a string parameter")
-	}
-
-	info, exists := m.methods[methodName]
-	if !exists {
-		return nil, nil // Return null for non-existent methods
-	}
-
-	// Build result object with only non-empty fields
-	result := map[string]any{
-		"name": info.Name,
-	}
-
-	if info.Description != "" {
-		result["description"] = info.Description
-	}
-
-	if info.Params != nil {
-		result["params"] = info.Params
-	}
-
-	return result, nil
 }

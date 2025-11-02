@@ -175,16 +175,20 @@ describe("Handler - Batch", () => {
 });
 
 describe("MethodMap Introspection", () => {
-  test("$methods includes introspection methods", async () => {
+  test("$methods returns array of method info", async () => {
     const methodMap = new MethodMap();
     methodMap.type = "TestObject";
 
-    methodMap.register("add", (params) => {
+    methodMap.register("add", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums[0]! + nums[1]!;
+    }, {
+      description: "Adds two numbers",
+      params: { a: "number", b: "number" },
+      category: "math",
     });
 
-    methodMap.register("subtract", (params) => {
+    methodMap.register("subtract", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums[0]! - nums[1]!;
     });
@@ -193,12 +197,31 @@ describe("MethodMap Introspection", () => {
     const result = await methodMap.callMethod("$methods", params);
 
     expect(Array.isArray(result)).toBe(true);
-    const methods = result as string[];
-    expect(methods).toContain("add");
-    expect(methods).toContain("subtract");
-    expect(methods).toContain("$methods");
-    expect(methods).toContain("$type");
-    expect(methods).toContain("$method");
+    const methods = result as Array<Record<string, unknown>>;
+
+    // Should have at least 4 methods: add, subtract, $methods, $type
+    expect(methods.length).toBeGreaterThanOrEqual(4);
+
+    // Find the add method
+    const addMethod = methods.find(m => m.name === "add");
+    expect(addMethod).toBeDefined();
+    expect(addMethod!.description).toBe("Adds two numbers");
+    expect(addMethod!.category).toBe("math");
+    expect(addMethod!.params).toEqual({ a: "number", b: "number" });
+
+    // Find the subtract method (no metadata)
+    const subtractMethod = methods.find(m => m.name === "subtract");
+    expect(subtractMethod).toBeDefined();
+    expect(subtractMethod!.name).toBe("subtract");
+    expect(subtractMethod!.description).toBeUndefined();
+    expect(subtractMethod!.category).toBeUndefined();
+    expect(subtractMethod!.params).toBeUndefined();
+
+    // Verify introspection methods are included
+    const hasMethodsMethod = methods.some(m => m.name === "$methods");
+    const hasTypeMethod = methods.some(m => m.name === "$type");
+    expect(hasMethodsMethod).toBe(true);
+    expect(hasTypeMethod).toBe(true);
   });
 
   test("$type returns custom type", async () => {
@@ -221,94 +244,38 @@ describe("MethodMap Introspection", () => {
   });
 });
 
-describe("MethodMap $method Introspection", () => {
-  test("$method with named params", async () => {
+describe("MethodMap with positional params", () => {
+  test("$methods includes positional params info", async () => {
     const methodMap = new MethodMap();
 
-    methodMap.register("add", (params) => {
-      const { a, b } = params.decode<{ a: number; b: number }>();
-      return a + b;
-    }, {
-      description: "Adds two numbers and returns the sum",
-      params: {
-        a: "number",
-        b: "number",
-      },
-    });
-
-    const params = newParams("add");
-    const result = await methodMap.callMethod("$method", params);
-
-    expect(result).toBeDefined();
-    const info = result as Record<string, unknown>;
-    expect(info.name).toBe("add");
-    expect(info.description).toBe("Adds two numbers and returns the sum");
-    expect(info.params).toEqual({
-      a: "number",
-      b: "number",
-    });
-  });
-
-  test("$method with positional params", async () => {
-    const methodMap = new MethodMap();
-
-    methodMap.register("multiply", (params) => {
+    methodMap.register("multiply", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums.reduce((a, b) => a * b, 1);
     }, {
       description: "Multiplies all provided numbers",
       params: ["number", "number", "...number"],
+      category: "math",
     });
 
-    const params = newParams("multiply");
-    const result = await methodMap.callMethod("$method", params);
+    const params = newParams(undefined);
+    const result = await methodMap.callMethod("$methods", params);
 
-    expect(result).toBeDefined();
-    const info = result as Record<string, unknown>;
-    expect(info.name).toBe("multiply");
-    expect(info.description).toBe("Multiplies all provided numbers");
-    expect(info.params).toEqual(["number", "number", "...number"]);
-  });
+    expect(Array.isArray(result)).toBe(true);
+    const methods = result as Array<Record<string, unknown>>;
 
-  test("$method without metadata", async () => {
-    const methodMap = new MethodMap();
-
-    methodMap.register("noMeta", () => {
-      return "test";
-    });
-
-    const params = newParams("noMeta");
-    const result = await methodMap.callMethod("$method", params);
-
-    expect(result).toBeDefined();
-    const info = result as Record<string, unknown>;
-    expect(info.name).toBe("noMeta");
-    expect(info.description).toBeUndefined();
-    expect(info.params).toBeUndefined();
-  });
-
-  test("$method for non-existent method returns null", async () => {
-    const methodMap = new MethodMap();
-
-    const params = newParams("doesNotExist");
-    const result = await methodMap.callMethod("$method", params);
-
-    expect(result).toBeNull();
-  });
-
-  test("$method with invalid params throws error", async () => {
-    const methodMap = new MethodMap();
-
-    const params = newParams(123); // Not a string
-
-    expect(methodMap.callMethod("$method", params)).rejects.toThrow();
+    // Find the multiply method
+    const multiplyMethod = methods.find(m => m.name === "multiply");
+    expect(multiplyMethod).toBeDefined();
+    expect(multiplyMethod!.description).toBe("Multiplies all provided numbers");
+    expect(multiplyMethod!.category).toBe("math");
+    expect(multiplyMethod!.params).toEqual(["number", "number", "...number"]);
   });
 
   test("backwards compatibility - register without options", async () => {
     const methodMap = new MethodMap();
 
     // Old-style registration should still work
-    methodMap.register("oldStyle", (params) => {
+    methodMap.register("oldStyle", (params, caller) => {
       return "works";
     });
 
@@ -316,43 +283,5 @@ describe("MethodMap $method Introspection", () => {
     const result = await methodMap.callMethod("oldStyle", params);
 
     expect(result).toBe("works");
-  });
-
-  test("backwards compatibility - register with only description", async () => {
-    const methodMap = new MethodMap();
-
-    methodMap.register("withDesc", (params) => {
-      return "works";
-    }, {
-      description: "A method with only description",
-    });
-
-    const params = newParams("withDesc");
-    const result = await methodMap.callMethod("$method", params);
-
-    expect(result).toBeDefined();
-    const info = result as Record<string, unknown>;
-    expect(info.name).toBe("withDesc");
-    expect(info.description).toBe("A method with only description");
-    expect(info.params).toBeUndefined();
-  });
-
-  test("backwards compatibility - register with only params", async () => {
-    const methodMap = new MethodMap();
-
-    methodMap.register("withParams", (params) => {
-      return "works";
-    }, {
-      params: { x: "number" },
-    });
-
-    const params = newParams("withParams");
-    const result = await methodMap.callMethod("$method", params);
-
-    expect(result).toBeDefined();
-    const info = result as Record<string, unknown>;
-    expect(info.name).toBe("withParams");
-    expect(info.description).toBeUndefined();
-    expect(info.params).toEqual({ x: "number" });
   });
 });

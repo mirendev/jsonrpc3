@@ -19,6 +19,7 @@ export interface MethodInfo {
   name: string;
   description?: string;
   params?: Record<string, string> | string[];
+  category?: string;
   handler: MethodHandler;
 }
 
@@ -28,12 +29,13 @@ export interface MethodInfo {
 export interface RegisterOptions {
   description?: string;
   params?: Record<string, string> | string[];
+  category?: string;
 }
 
 /**
  * MethodMap provides a simple way to create RPC objects
  * by registering method handlers as functions.
- * It automatically supports the optional $methods, $type, and $method introspection methods.
+ * It automatically supports the optional $methods and $type introspection methods.
  */
 export class MethodMap implements RpcObject {
   private methods = new Map<string, MethodInfo>();
@@ -70,7 +72,7 @@ export class MethodMap implements RpcObject {
 
   /**
    * Call a method (implements RpcObject interface).
-   * Automatically handles the $methods, $type, and $method introspection methods.
+   * Automatically handles the $methods and $type introspection methods.
    */
   async callMethod(method: string, params: Params, caller: Caller): Promise<unknown> {
     // Handle introspection methods
@@ -79,9 +81,6 @@ export class MethodMap implements RpcObject {
     }
     if (method === "$type") {
       return this.getType();
-    }
-    if (method === "$method") {
-      return this.getMethodInfo(params);
     }
 
     // Look up user-registered method
@@ -101,11 +100,36 @@ export class MethodMap implements RpcObject {
   }
 
   /**
-   * Get list of all methods (including introspection)
+   * Get detailed information about all methods (including introspection)
    */
-  private getMethods(): string[] {
-    const methods = Array.from(this.methods.keys());
-    methods.push("$methods", "$type", "$method");
+  private getMethods(): Array<Record<string, unknown>> {
+    const methods: Array<Record<string, unknown>> = [];
+
+    // Add user-registered methods
+    for (const info of this.methods.values()) {
+      const methodInfo: Record<string, unknown> = {
+        name: info.name,
+      };
+
+      if (info.description) {
+        methodInfo.description = info.description;
+      }
+
+      if (info.params) {
+        methodInfo.params = info.params;
+      }
+
+      if (info.category) {
+        methodInfo.category = info.category;
+      }
+
+      methods.push(methodInfo);
+    }
+
+    // Add introspection methods
+    methods.push({ name: "$methods" });
+    methods.push({ name: "$type" });
+
     return methods;
   }
 
@@ -114,38 +138,5 @@ export class MethodMap implements RpcObject {
    */
   private getType(): string {
     return this.type ?? "MethodMap";
-  }
-
-  /**
-   * Get detailed information about a specific method.
-   * Implements the $method introspection method.
-   */
-  private getMethodInfo(params: Params): Record<string, unknown> | null {
-    const methodName = params.decode<string>();
-
-    // Validate that the parameter is a string
-    if (typeof methodName !== "string") {
-      throw invalidParamsError("$method expects a string parameter");
-    }
-
-    const info = this.methods.get(methodName);
-    if (!info) {
-      return null; // Return null for non-existent methods
-    }
-
-    // Build result object with only non-empty fields
-    const result: Record<string, unknown> = {
-      name: info.name,
-    };
-
-    if (info.description) {
-      result.description = info.description;
-    }
-
-    if (info.params) {
-      result.params = info.params;
-    }
-
-    return result;
   }
 }

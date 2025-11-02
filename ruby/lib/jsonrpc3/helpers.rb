@@ -3,13 +3,14 @@
 module JSONRPC3
   # MethodInfo contains metadata about a registered method for introspection
   class MethodInfo
-    attr_accessor :name, :description, :params, :handler
+    attr_accessor :name, :description, :params, :category, :handler
 
-    def initialize(name:, handler:, description: nil, params: nil)
+    def initialize(name:, handler:, description: nil, params: nil, category: nil)
       @name = name
       @handler = handler
       @description = description
       @params = params
+      @category = category
     end
 
     # Convert to hash for introspection (excluding handler)
@@ -17,6 +18,7 @@ module JSONRPC3
       result = { "name" => @name }
       result["description"] = @description if @description
       result["params"] = @params if @params
+      result["category"] = @category if @category
       result
     end
   end
@@ -37,8 +39,9 @@ module JSONRPC3
     # @param handler [Proc, nil] optional handler block
     # @param description [String, nil] optional description for introspection
     # @param params [Hash, Array, nil] optional parameter metadata (Hash for named params, Array for positional)
+    # @param category [String, nil] optional category for introspection
     # @yield [params] block to handle the method call
-    def register(method_name, handler = nil, description: nil, params: nil, &block)
+    def register(method_name, handler = nil, description: nil, params: nil, category: nil, &block)
       handler ||= block
       raise ArgumentError, "Handler required" unless handler
 
@@ -47,7 +50,8 @@ module JSONRPC3
         name: method_str,
         handler: handler,
         description: description,
-        params: params
+        params: params,
+        category: category
       )
     end
 
@@ -61,8 +65,6 @@ module JSONRPC3
         get_methods
       when "$type"
         get_type
-      when "$method"
-        get_method_info(params)
       else
         method_info = @methods[method_str]
         raise JSONRPC3.method_not_found_error(method) unless method_info
@@ -73,38 +75,25 @@ module JSONRPC3
 
     private
 
-    # Get list of available methods
+    # Get detailed information about all available methods
     def get_methods
-      methods = @methods.keys
-      methods << "$methods" << "$type" << "$method"
-      methods.sort
+      methods = []
+
+      # Add user-registered methods with their metadata
+      @methods.each_value do |info|
+        methods << info.to_h
+      end
+
+      # Add introspection methods
+      methods << { "name" => "$methods" }
+      methods << { "name" => "$type" }
+
+      methods
     end
 
     # Get object type
     def get_type
       @type
-    end
-
-    # Get detailed information about a specific method
-    # Implements the $method introspection method
-    def get_method_info(params)
-      method_name = params.decode
-
-      # Validate that we received a string parameter
-      unless method_name.is_a?(String)
-        raise JSONRPC3::RpcError.new(
-          "$method expects a string parameter",
-          code: JSONRPC3::CODE_INVALID_PARAMS
-        )
-      end
-
-      method_info = @methods[method_name]
-
-      # Return nil for non-existent methods
-      return nil unless method_info
-
-      # Return metadata hash (without handler)
-      method_info.to_h
     end
   end
 end
