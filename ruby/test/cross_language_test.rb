@@ -1,12 +1,14 @@
 # frozen_string_literal: true
 
 require_relative "test_helper"
-require "net/http"
+require "socket"
 
 # Cross-language integration tests
 # Tests Ruby clients against Go servers
 class CrossLanguageTest < Minitest::Test
   HTTP_PORT = 18083
+  WS_PORT = 18084
+  PEER_PORT = 18085
   GO_SERVER_PROCESS = nil
 
   def self.startup
@@ -20,21 +22,27 @@ class CrossLanguageTest < Minitest::Test
     @@go_server_process = spawn(
       go_server_path,
       "-http", HTTP_PORT.to_s,
+      "-ws", WS_PORT.to_s,
+      "-peer", PEER_PORT.to_s,
       out: File::NULL,
       err: File::NULL
     )
 
-    # Wait for server to be ready
+    # Wait for HTTP server to be ready
     30.times do
       begin
-        Net::HTTP.get(URI("http://localhost:#{HTTP_PORT}"))
+        socket = TCPSocket.new("localhost", HTTP_PORT)
+        socket.close
         break
       rescue Errno::ECONNREFUSED, Errno::EADDRNOTAVAIL
         sleep 0.1
       end
     end
 
-    puts "Go test server started on HTTP port #{HTTP_PORT}"
+    # Wait for WebSocket server to be ready
+    sleep 0.5
+
+    puts "Go test server started on HTTP port #{HTTP_PORT}, WS port #{WS_PORT}"
   end
 
   def self.shutdown
@@ -159,7 +167,7 @@ class CrossLanguageTest < Minitest::Test
   end
 
   def test_ruby_client_can_query_go_counter_introspection
-    client = JSONRPC3::HttpClient.new("http://localhost:#{HTTP_PORT}")
+    client = JSONRPC3::WebSocketClient.new("http://localhost:#{WS_PORT}")
 
     # Create a counter
     counter_ref = client.call("createCounter")
@@ -191,6 +199,128 @@ class CrossLanguageTest < Minitest::Test
     # Query info for non-existent method
     info = client.call("$method", "nonexistent")
     assert_nil info
+  end
+
+  # WebSocket Tests
+
+  def test_ruby_ws_client_can_call_go_server_add
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    result = client.call("add", [2, 3])
+    assert_equal 5, result
+
+    client.close
+  end
+
+  def test_ruby_ws_client_can_call_go_server_echo
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    data = { "message" => "hello", "value" => 42 }
+    result = client.call("echo", data)
+    assert_equal data, result
+
+    client.close
+  end
+
+  def test_ruby_ws_client_can_create_and_use_counter
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    # Create counter
+    counter_ref = client.call("createCounter")
+    assert counter_ref.is_a?(Hash)
+    assert counter_ref.key?("$ref")
+
+    # Increment
+    val1 = client.call("increment", nil, counter_ref)
+    assert_equal 1, val1
+
+    val2 = client.call("increment", nil, counter_ref)
+    assert_equal 2, val2
+
+    # Get value
+    final = client.call("getValue", nil, counter_ref)
+    assert_equal 2, final
+
+    client.close
+  end
+
+  def test_ruby_ws_client_can_send_notifications
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    # Should not raise
+    client.notify("add", [1, 2])
+    assert true
+
+    client.close
+  end
+
+  def test_ruby_ws_client_can_query_go_server_methods
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    # Query available methods
+    methods = client.call("$methods")
+    assert methods.is_a?(Array)
+    assert_includes methods, "add"
+    assert_includes methods, "echo"
+    assert_includes methods, "createCounter"
+    assert_includes methods, "$methods"
+    assert_includes methods, "$type"
+    assert_includes methods, "$method"
+
+    client.close
+  end
+
+  def test_ruby_ws_client_can_query_go_server_method_info
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    # Query info for 'add' method
+    info = client.call("$method", "add")
+    assert_equal "add", info["name"]
+    assert_equal "Adds a list of numbers", info["description"]
+    assert_equal ["number"], info["params"]
+
+    client.close
+  end
+
+  def test_ruby_ws_client_can_query_go_counter_introspection
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    # Create a counter
+    counter_ref = client.call("createCounter")
+    assert counter_ref.is_a?(Hash)
+    assert counter_ref.key?("$ref")
+
+    # Query counter's type
+    type = client.call("$type", nil, counter_ref)
+    assert_equal "Counter", type
+
+    # Query counter's methods
+    methods = client.call("$methods", nil, counter_ref)
+    assert_includes methods, "increment"
+    assert_includes methods, "getValue"
+
+    # Query counter's method info
+    info = client.call("$method", "increment", counter_ref)
+    assert_equal "increment", info["name"]
+    assert_equal "Increments the counter by 1", info["description"]
+
+    client.close
+  end
+
+  def test_ruby_ws_client_concurrent_requests
+    client = JSONRPC3::WebSocketClient.new("ws://localhost:#{WS_PORT}")
+
+    # Make multiple concurrent requests
+    threads = 5.times.map do |i|
+      Thread.new do
+        result = client.call("add", [i, i])
+        assert_equal i * 2, result
+      end
+    end
+
+    threads.each(&:join)
+
+    client.close
   end
 
 end

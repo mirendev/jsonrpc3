@@ -94,7 +94,7 @@ export class WsClient {
 
     // Setup handler if rootObject provided (for bidirectional support)
     if (options.rootObject) {
-      this.handler = new Handler(this.session, options.rootObject);
+      this.handler = new Handler(this.session, options.rootObject, this);
     }
   }
 

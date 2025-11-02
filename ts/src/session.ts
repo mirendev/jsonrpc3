@@ -5,11 +5,13 @@
 import { nanoid } from "nanoid";
 import type { Params } from "./params.ts";
 
+import type { Caller } from "./types.ts";
+
 /**
  * Object interface - all RPC objects must implement this
  */
 export interface RpcObject {
-  callMethod(method: string, params: Params): Promise<unknown>;
+  callMethod(method: string, params: Params, caller: Caller): Promise<unknown>;
 }
 
 /**

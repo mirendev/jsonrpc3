@@ -13,28 +13,26 @@ describe("WebSocket Transport", () => {
 
   beforeAll(async () => {
     // Create server
-    const session = new Session();
     const root = new MethodMap();
 
-    root.register("add", (params) => {
+    root.register("add", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums[0]! + nums[1]!;
     });
 
-    root.register("echo", (params) => {
+    root.register("echo", (params, caller) => {
       return params.decode();
     });
 
-    root.register("createCounter", () => {
+    root.register("createCounter", (params, caller) => {
       const counter = new MethodMap();
       let count = 0;
-      counter.register("increment", () => ++count);
-      counter.register("getValue", () => count);
+      counter.register("increment", (params, caller) => ++count);
+      counter.register("getValue", (params, caller) => count);
       return counter;
     });
 
-    const handler = new Handler(session, root);
-    server = new WsServer(handler, { port: 0 }); // Random port
+    server = new WsServer(root, { port: 0 }); // Random port
     await server.start();
     serverUrl = server.url()!;
 
@@ -233,8 +231,8 @@ describe("WebSocket Bidirectional", () => {
     serverRoot.register("serverEcho", (params) => {
       return { server: params.decode() };
     });
-    const handler = new Handler(serverSession, serverRoot);
-    const wsServer = new WsServer(handler, { port: 0 });
+    // Handler now created per-client
+    const wsServer = new WsServer(serverRoot, { port: 0 });
     await wsServer.start();
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -278,8 +276,8 @@ describe("WebSocket Bidirectional", () => {
     serverRoot.register("logMessage", (params) => {
       serverMessages.push(params.decode<string>());
     });
-    const handler = new Handler(serverSession, serverRoot);
-    const wsServer = new WsServer(handler, { port: 0 });
+    // Handler now created per-client
+    const wsServer = new WsServer(serverRoot, { port: 0 });
     await wsServer.start();
 
     await new Promise((resolve) => setTimeout(resolve, 100));
@@ -331,8 +329,8 @@ describe("WebSocket Bidirectional", () => {
       counter.register("getValue", () => count);
       return counter;
     });
-    const handler = new Handler(serverSession, serverRoot);
-    const wsServer = new WsServer(handler, { port: 0 });
+    // Handler now created per-client
+    const wsServer = new WsServer(serverRoot, { port: 0 });
     await wsServer.start();
 
     await new Promise((resolve) => setTimeout(resolve, 100));

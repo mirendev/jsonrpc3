@@ -1,3 +1,4 @@
+from jsonrpc3 import NoOpCaller
 """Basic tests for JSON-RPC 3.0 core functionality."""
 
 import json
@@ -146,14 +147,14 @@ def test_method_map():
     """Test MethodMap functionality."""
     map_obj = MethodMap()
 
-    def add_handler(params):
+    def add_handler(params, caller):
         data = params.decode()
         return data["a"] + data["b"]
 
     map_obj.register("add", add_handler)
 
     params = new_params({"a": 5, "b": 3})
-    result = map_obj.call_method("add", params)
+    result = map_obj.call_method("add", params, NoOpCaller())
     assert result == 8
 
 
@@ -162,15 +163,15 @@ def test_method_map_introspection():
     map_obj = MethodMap()
     map_obj.type = "Counter"
 
-    def increment_handler(params):
+    def increment_handler(params, caller):
         return 1
 
     map_obj.register("increment", increment_handler)
 
-    type_result = map_obj.call_method("$type", NULL_PARAMS)
+    type_result = map_obj.call_method("$type", NULL_PARAMS, NoOpCaller())
     assert type_result == "Counter"
 
-    methods = map_obj.call_method("$methods", NULL_PARAMS)
+    methods = map_obj.call_method("$methods", NULL_PARAMS, NoOpCaller())
     assert "increment" in methods
     assert "$type" in methods
     assert "$methods" in methods
@@ -181,7 +182,7 @@ def test_method_introspection_with_metadata():
     """Test $method introspection with full metadata."""
     map_obj = MethodMap()
 
-    def add_handler(params):
+    def add_handler(params, caller):
         data = params.decode()
         return data["a"] + data["b"]
 
@@ -194,7 +195,7 @@ def test_method_introspection_with_metadata():
     )
 
     # Get method info
-    result = map_obj.call_method("$method", new_params("add"))
+    result = map_obj.call_method("$method", new_params("add"), NoOpCaller())
     assert result is not None
     assert result["name"] == "add"
     assert result["description"] == "Adds two numbers"
@@ -205,7 +206,7 @@ def test_method_introspection_with_positional_params():
     """Test $method introspection with positional parameters."""
     map_obj = MethodMap()
 
-    def multiply_handler(params):
+    def multiply_handler(params, caller):
         data = params.decode()
         return data[0] * data[1]
 
@@ -218,7 +219,7 @@ def test_method_introspection_with_positional_params():
     )
 
     # Get method info
-    result = map_obj.call_method("$method", new_params("multiply"))
+    result = map_obj.call_method("$method", new_params("multiply"), NoOpCaller())
     assert result is not None
     assert result["name"] == "multiply"
     assert result["description"] == "Multiplies two numbers"
@@ -229,14 +230,14 @@ def test_method_introspection_minimal():
     """Test $method introspection with minimal metadata."""
     map_obj = MethodMap()
 
-    def simple_handler(params):
+    def simple_handler(params, caller):
         return "ok"
 
     # Register without optional metadata
     map_obj.register("simple", simple_handler)
 
     # Get method info
-    result = map_obj.call_method("$method", new_params("simple"))
+    result = map_obj.call_method("$method", new_params("simple"), NoOpCaller())
     assert result is not None
     assert result["name"] == "simple"
     assert "description" not in result
@@ -248,7 +249,7 @@ def test_method_introspection_nonexistent():
     map_obj = MethodMap()
 
     # Query non-existent method should return None
-    result = map_obj.call_method("$method", new_params("nonexistent"))
+    result = map_obj.call_method("$method", new_params("nonexistent"), NoOpCaller())
     assert result is None
 
 
@@ -258,7 +259,7 @@ def test_method_introspection_invalid_params():
 
     # Pass non-string parameter should raise error
     with pytest.raises(RpcError) as exc_info:
-        map_obj.call_method("$method", new_params({"invalid": "dict"}))
+        map_obj.call_method("$method", new_params({"invalid": "dict"}), NoOpCaller())
 
     assert exc_info.value.code == -32602  # CODE_INVALID_PARAMS
 
@@ -267,18 +268,18 @@ def test_backwards_compatibility():
     """Test that register() works without optional parameters."""
     map_obj = MethodMap()
 
-    def old_style_handler(params):
+    def old_style_handler(params, caller):
         return "works"
 
     # Should work without description or params arguments
     map_obj.register("old_style", old_style_handler)
 
     # Should be callable
-    result = map_obj.call_method("old_style", NULL_PARAMS)
+    result = map_obj.call_method("old_style", NULL_PARAMS, NoOpCaller())
     assert result == "works"
 
     # Should appear in methods list
-    methods = map_obj.call_method("$methods", NULL_PARAMS)
+    methods = map_obj.call_method("$methods", NULL_PARAMS, NoOpCaller())
     assert "old_style" in methods
 
 

@@ -21,18 +21,19 @@ def server_and_client():
     server_session = Session()
     root = MethodMap()
 
-    def add_handler(params):
+    def add_handler(params, caller):
         data = params.decode()
         return data["a"] + data["b"]
 
     root.register("add", add_handler)
 
-    def echo_handler(params):
+    def echo_handler(params, caller):
         return params.decode()
 
     root.register("echo", echo_handler)
 
-    handler = Handler(server_session, root)
+    from jsonrpc3 import NoOpCaller
+    handler = Handler(server_session, root, NoOpCaller())
     server = HttpServer(handler, port=0)  # Random port
     server.start()
 
@@ -72,15 +73,15 @@ def test_object_reference(server_and_client):
     server_session = server.handler.session
     root = server.handler.root_object
 
-    def create_counter_handler(params):
+    def create_counter_handler(params, caller):
         counter = MethodMap()
         count = [0]  # Use list for mutability
 
-        def increment_handler(params):
+        def increment_handler(params, caller):
             count[0] += 1
             return count[0]
 
-        def get_value_handler(params):
+        def get_value_handler(params, caller):
             return count[0]
 
         counter.register("increment", increment_handler)

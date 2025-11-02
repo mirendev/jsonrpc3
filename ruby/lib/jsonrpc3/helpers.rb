@@ -52,7 +52,7 @@ module JSONRPC3
     end
 
     # Call a method on this object
-    def call_method(method, params)
+    def call_method(method, params, caller)
       method_str = method.to_s
 
       # Built-in introspection methods
@@ -67,7 +67,7 @@ module JSONRPC3
         method_info = @methods[method_str]
         raise JSONRPC3.method_not_found_error(method) unless method_info
 
-        method_info.handler.call(params)
+        method_info.handler.call(params, caller)
       end
     end
 

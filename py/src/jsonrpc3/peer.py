@@ -45,7 +45,8 @@ class Peer:
         self.writer = writer
         self.session = session or Session()
         self._codec = get_codec(mime_type)
-        self._handler = Handler(self.session, root_object, [mime_type])
+        # Pass this peer as caller for bidirectional communication
+        self._handler = Handler(self.session, root_object, self, [mime_type])
 
         self._next_id = 0
         self._id_lock = asyncio.Lock()

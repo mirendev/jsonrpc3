@@ -11,6 +11,7 @@ from .types import (
     Request,
     Response,
     MessageSet,
+    NoOpCaller,
     reference,
     to_ref,
     new_request,
@@ -33,6 +34,9 @@ from .errors import (
     CODE_INVALID_REFERENCE,
     CODE_REFERENCE_NOT_FOUND,
     CODE_REFERENCE_TYPE_ERROR,
+    CODE_TIMEOUT,
+    CODE_CONNECTION_CLOSED,
+    CODE_CONNECTION_ERROR,
     parse_error,
     invalid_request_error,
     method_not_found_error,
@@ -61,6 +65,8 @@ from .helpers import MethodMap, MethodInfo
 from .http_client import HttpClient
 from .http_server import HttpServer
 from .peer import Peer
+from .websocket_client import WebSocketClient
+from .websocket_server import WebSocketHandler, WebSocketServerConn, serve
 
 __all__ = [
     # Version
@@ -93,6 +99,9 @@ __all__ = [
     "CODE_INVALID_REFERENCE",
     "CODE_REFERENCE_NOT_FOUND",
     "CODE_REFERENCE_TYPE_ERROR",
+    "CODE_TIMEOUT",
+    "CODE_CONNECTION_CLOSED",
+    "CODE_CONNECTION_ERROR",
     "parse_error",
     "invalid_request_error",
     "method_not_found_error",
@@ -122,4 +131,8 @@ __all__ = [
     "HttpClient",
     "HttpServer",
     "Peer",
+    "WebSocketClient",
+    "WebSocketHandler",
+    "WebSocketServerConn",
+    "serve",
 ]

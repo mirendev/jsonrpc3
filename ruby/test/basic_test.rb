@@ -167,7 +167,7 @@ class BasicTest < Minitest::Test
     end
 
     params = JSONRPC3.new_params({ "a" => 5, "b" => 3 })
-    result = map.call_method("add", params)
+    result = map.call_method("add", params, JSONRPC3::NoOpCaller.new)
     assert_equal 8, result
   end
 
@@ -177,10 +177,10 @@ class BasicTest < Minitest::Test
 
     map.register("increment") { 1 }
 
-    type = map.call_method("$type", JSONRPC3::NULL_PARAMS)
+    type = map.call_method("$type", JSONRPC3::NULL_PARAMS, JSONRPC3::NoOpCaller.new)
     assert_equal "Counter", type
 
-    methods = map.call_method("$methods", JSONRPC3::NULL_PARAMS)
+    methods = map.call_method("$methods", JSONRPC3::NULL_PARAMS, JSONRPC3::NoOpCaller.new)
     assert_includes methods, "increment"
     assert_includes methods, "$type"
     assert_includes methods, "$methods"
@@ -196,7 +196,7 @@ class BasicTest < Minitest::Test
     end
 
     params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params)
+    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
 
     assert_equal "add", info["name"]
     refute info.key?("description")
@@ -212,7 +212,7 @@ class BasicTest < Minitest::Test
     end
 
     params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params)
+    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
 
     assert_equal "add", info["name"]
     assert_equal "Adds two numbers", info["description"]
@@ -229,7 +229,7 @@ class BasicTest < Minitest::Test
     end
 
     params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params)
+    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
 
     assert_equal "add", info["name"]
     assert_equal "Adds two numbers", info["description"]
@@ -247,7 +247,7 @@ class BasicTest < Minitest::Test
     end
 
     params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", params)
+    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
 
     assert_equal "add", info["name"]
     assert_equal "Adds two numbers", info["description"]
@@ -263,7 +263,7 @@ class BasicTest < Minitest::Test
     end
 
     params = JSONRPC3.new_params("subtract")
-    info = map.call_method("$method", params)
+    info = map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
 
     assert_nil info
   end
@@ -280,7 +280,7 @@ class BasicTest < Minitest::Test
     params = JSONRPC3.new_params(123)
 
     error = assert_raises(JSONRPC3::RpcError) do
-      map.call_method("$method", params)
+      map.call_method("$method", params, JSONRPC3::NoOpCaller.new)
     end
 
     assert_equal JSONRPC3::CODE_INVALID_PARAMS, error.code
@@ -298,12 +298,12 @@ class BasicTest < Minitest::Test
 
     # Should work normally
     params = JSONRPC3.new_params({ "a" => 5, "b" => 3 })
-    result = map.call_method("add", params)
+    result = map.call_method("add", params, JSONRPC3::NoOpCaller.new)
     assert_equal 8, result
 
     # Should have basic info
     info_params = JSONRPC3.new_params("add")
-    info = map.call_method("$method", info_params)
+    info = map.call_method("$method", info_params, JSONRPC3::NoOpCaller.new)
     assert_equal "add", info["name"]
   end
 

@@ -22,7 +22,7 @@ class ProtocolHandler(RpcObject):
         self.session = session
         self.mime_types = mime_types or [MIME_TYPE_JSON]
 
-    def call_method(self, method: str, params: Params) -> Any:
+    def call_method(self, method: str, params: Params, caller: Any) -> Any:
         """Call a protocol method."""
         if method == "dispose":
             return self.handle_dispose(params)

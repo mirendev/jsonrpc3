@@ -20,13 +20,13 @@ async def peer_pair():
         # This will be our "server" peer
         server_root = MethodMap()
 
-        def add_handler(params):
+        def add_handler(params, caller):
             data = params.decode()
             return data["a"] + data["b"]
 
         server_root.register("add", add_handler)
 
-        def echo_handler(params):
+        def echo_handler(params, caller):
             return params.decode()
 
         server_root.register("echo", echo_handler)
@@ -102,11 +102,11 @@ async def test_peer_object_reference(peer_pair):
     counter = MethodMap()
     count = [0]
 
-    def increment_handler(params):
+    def increment_handler(params, caller):
         count[0] += 1
         return count[0]
 
-    def get_value_handler(params):
+    def get_value_handler(params, caller):
         return count[0]
 
     counter.register("increment", increment_handler)
@@ -115,12 +115,12 @@ async def test_peer_object_reference(peer_pair):
     # Register the counter object
     ref = client_peer.register_object(counter)
     assert ref is not None
-    assert client_peer.session.has_local_ref(ref)
+    assert client_peer.session.has_local_ref(ref.ref)
 
     # Unregister it
     result = client_peer.unregister_object(ref)
     assert result is True
-    assert not client_peer.session.has_local_ref(ref)
+    assert not client_peer.session.has_local_ref(ref.ref)
 
 
 async def test_peer_close(peer_pair):

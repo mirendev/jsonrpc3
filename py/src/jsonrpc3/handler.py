@@ -30,6 +30,7 @@ class Handler:
         self,
         session: Session,
         root_object: RpcObject,
+        caller: Any,
         mime_types: List[str] = None,
     ):
         """
@@ -38,10 +39,12 @@ class Handler:
         Args:
             session: Session for reference management
             root_object: Root RPC object for method dispatch
+            caller: Caller for making callbacks
             mime_types: Supported MIME types
         """
         self.session = session
         self.root_object = root_object
+        self.caller = caller
         self.protocol = ProtocolHandler(session, mime_types)
 
     def handle_request(self, req: Union[dict, Request]) -> Response:
@@ -74,7 +77,7 @@ class Handler:
 
             # Call method
             method = req.method if isinstance(req, Request) else req["method"]
-            result = obj.call_method(method, params)
+            result = obj.call_method(method, params, self.caller)
 
             # Process result for automatic reference registration
             processed_result = self._process_result(result)

@@ -3,14 +3,16 @@
 module JSONRPC3
   # Peer for bidirectional JSON-RPC 3.0 communication over streams
   class Peer
+    include Caller
     attr_reader :session
 
     def initialize(input_io, output_io, root_object, options = {})
       @input_io = input_io
       @output_io = output_io
       @session = options[:session] || Session.new
-      @handler = Handler.new(@session, root_object, [options[:mime_type] || MIME_TYPE_JSON])
       @codec = JSONRPC3.get_codec(options[:mime_type] || MIME_TYPE_JSON)
+      # Create handler with this peer as caller for bidirectional communication
+      @handler = Handler.new(@session, root_object, self, [options[:mime_type] || MIME_TYPE_JSON])
 
       @next_id = 0
       @id_mutex = Mutex.new

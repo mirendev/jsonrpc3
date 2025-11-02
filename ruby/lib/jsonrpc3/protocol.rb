@@ -11,7 +11,7 @@ module JSONRPC3
     end
 
     # Call a protocol method
-    def call_method(method, params)
+    def call_method(method, params, _caller)
       case method
       when "dispose"
         handle_dispose(params)

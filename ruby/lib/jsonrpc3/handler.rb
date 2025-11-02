@@ -3,9 +3,12 @@
 module JSONRPC3
   # Handler routes requests to objects
   class Handler
-    def initialize(session, root_object, mime_types = [MIME_TYPE_JSON])
+    attr_reader :session
+
+    def initialize(session, root_object, caller, mime_types = [MIME_TYPE_JSON])
       @session = session
       @root_object = root_object
+      @caller = caller
       @protocol = ProtocolHandler.new(session, mime_types)
     end
 
@@ -31,7 +34,7 @@ module JSONRPC3
 
       # Call method
       method = req.is_a?(Request) ? req.method : req["method"]
-      result = obj.call_method(method, params)
+      result = obj.call_method(method, params, @caller)
 
       # Process result for automatic reference registration
       processed_result = process_result(result)

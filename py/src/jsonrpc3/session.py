@@ -13,13 +13,14 @@ class RpcObject(ABC):
     """Abstract base class for RPC objects that can receive method calls."""
 
     @abstractmethod
-    def call_method(self, method: str, params: Any) -> Any:
+    def call_method(self, method: str, params: Any, caller: Any) -> Any:
         """
         Call a method on this object.
 
         Args:
             method: Method name to call
             params: Method parameters (Params instance)
+            caller: Caller for making callbacks
 
         Returns:
             Method result

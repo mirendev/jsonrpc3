@@ -3,6 +3,7 @@
 Tests Python clients against Go servers.
 """
 
+import asyncio
 import socket
 import subprocess
 import time
@@ -10,11 +11,14 @@ from pathlib import Path
 
 import pytest
 from jsonrpc3.http_client import HttpClient
+from jsonrpc3.websocket_client import WebSocketClient
 from jsonrpc3.batch import execute_batch
 from jsonrpc3.types import Request
 
 
-HTTP_PORT = 18084
+HTTP_PORT = 18085
+WS_PORT = 18086
+PEER_PORT = 18087
 
 
 def wait_for_port(port: int, max_attempts: int = 30, delay_ms: int = 100) -> None:
@@ -44,15 +48,16 @@ def go_server():
 
     # Start server
     process = subprocess.Popen(
-        [str(go_server_path), "-http", str(HTTP_PORT)],
+        [str(go_server_path), "-http", str(HTTP_PORT), "-ws", str(WS_PORT), "-peer", str(PEER_PORT)],
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
 
-    # Wait for server to be ready
+    # Wait for servers to be ready
     try:
         wait_for_port(HTTP_PORT)
-        print(f"\nGo test server started on HTTP port {HTTP_PORT}")
+        time.sleep(0.5)  # Wait for WebSocket server
+        print(f"\nGo test server started on HTTP port {HTTP_PORT}, WS port {WS_PORT}")
     except TimeoutError as e:
         process.terminate()
         process.wait()
@@ -147,3 +152,151 @@ class TestCrossLanguageHTTP:
         assert results.get_result(0) == 3
         assert results.get_result(1) == 7
         assert results.get_result(2) == 11
+
+
+class TestCrossLanguageWebSocket:
+    """Test Python WebSocket client against Go WebSocket server."""
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_call_go_server_add(self):
+        """Test basic add method via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            result = await client.call("add", [2, 3])
+            assert result == 5
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_call_go_server_echo(self):
+        """Test echo method via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            data = {"message": "hello", "value": 42}
+            result = await client.call("echo", data)
+            assert result == data
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_create_and_use_counter(self):
+        """Test creating and using counter object via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            # Create counter
+            counter_ref = await client.call("createCounter")
+            assert isinstance(counter_ref, dict)
+            assert "$ref" in counter_ref
+
+            # Increment
+            val1 = await client.call("increment", None, counter_ref)
+            assert val1 == 1
+
+            val2 = await client.call("increment", None, counter_ref)
+            assert val2 == 2
+
+            # Get value
+            final = await client.call("getValue", None, counter_ref)
+            assert final == 2
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_send_notifications(self):
+        """Test sending notifications via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            # Should not raise
+            await client.notify("add", [1, 2])
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_query_go_server_methods(self):
+        """Test querying server methods via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            # Query available methods
+            methods = await client.call("$methods")
+            assert isinstance(methods, list)
+            assert "add" in methods
+            assert "echo" in methods
+            assert "createCounter" in methods
+            assert "$methods" in methods
+            assert "$type" in methods
+            assert "$method" in methods
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_query_go_server_method_info(self):
+        """Test querying method info via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            # Query info for 'add' method
+            info = await client.call("$method", "add")
+            assert info["name"] == "add"
+            assert info["description"] == "Adds a list of numbers"
+            assert info["params"] == ["number"]
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_can_query_go_counter_introspection(self):
+        """Test querying counter introspection via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            # Create a counter
+            counter_ref = await client.call("createCounter")
+            assert isinstance(counter_ref, dict)
+            assert "$ref" in counter_ref
+
+            # Query counter's type
+            type_info = await client.call("$type", None, counter_ref)
+            assert type_info == "Counter"
+
+            # Query counter's methods
+            methods = await client.call("$methods", None, counter_ref)
+            assert "increment" in methods
+            assert "getValue" in methods
+
+            # Query counter's method info
+            info = await client.call("$method", "increment", counter_ref)
+            assert info["name"] == "increment"
+            assert info["description"] == "Increments the counter by 1"
+        finally:
+            await client.close()
+
+    @pytest.mark.asyncio
+    async def test_python_ws_client_concurrent_requests(self):
+        """Test concurrent requests via WebSocket."""
+        client = WebSocketClient(f"ws://localhost:{WS_PORT}")
+        await client.connect()
+
+        try:
+            # Make multiple concurrent requests
+            async def make_call(i):
+                result = await client.call("add", [i, i])
+                assert result == i * 2
+                return result
+
+            tasks = [make_call(i) for i in range(5)]
+            results = await asyncio.gather(*tasks)
+
+            assert results == [0, 2, 4, 6, 8]
+        finally:
+            await client.close()

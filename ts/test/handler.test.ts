@@ -1,3 +1,4 @@
+import { NoOpCaller } from "../src/types.ts";
 import { test, expect, describe } from "bun:test";
 import { Session } from "../src/session.ts";
 import { Handler } from "../src/handler.ts";
@@ -9,12 +10,12 @@ describe("Handler", () => {
   test("route to root object", async () => {
     const session = new Session();
     const root = new MethodMap();
-    root.register("add", (params) => {
+    root.register("add", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums[0]! + nums[1]!;
     });
 
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
     const req = newRequest("add", [2, 3], 1);
     const resp = await handler.handleRequest(req);
 
@@ -26,7 +27,7 @@ describe("Handler", () => {
   test("route to $rpc protocol handler", async () => {
     const session = new Session();
     const root = new MethodMap();
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
 
     const req = newRequest("session_id", undefined, 1, "$rpc");
     const resp = await handler.handleRequest(req);
@@ -46,7 +47,7 @@ describe("Handler", () => {
     counter.register("increment", () => ++count);
     const ref = session.addLocalRef(counter);
 
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
     const req = newRequest("increment", undefined, 1, ref);
     const resp = await handler.handleRequest(req);
 
@@ -57,7 +58,7 @@ describe("Handler", () => {
   test("method not found error", async () => {
     const session = new Session();
     const root = new MethodMap();
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
 
     const req = newRequest("nonexistent", undefined, 1);
     const resp = await handler.handleRequest(req);
@@ -79,7 +80,7 @@ describe("Handler", () => {
       return counter;
     });
 
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
     const req = newRequest("createCounter", undefined, 1);
     const resp = await handler.handleRequest(req);
 
@@ -95,12 +96,12 @@ describe("Handler - Batch", () => {
   test("handle batch requests", async () => {
     const session = new Session();
     const root = new MethodMap();
-    root.register("add", (params) => {
+    root.register("add", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums[0]! + nums[1]!;
     });
 
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
     const batch = [
       newRequest("add", [1, 2], 1),
       newRequest("add", [3, 4], 2),
@@ -124,7 +125,7 @@ describe("Handler - Batch", () => {
       return counter;
     });
 
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
     const batch = [
       newRequest("createCounter", undefined, 0),
       newRequest("increment", undefined, 1, "\\0"), // Ref to first result
@@ -140,7 +141,7 @@ describe("Handler - Batch", () => {
   test("forward reference error", async () => {
     const session = new Session();
     const root = new MethodMap();
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
 
     const batch = [
       newRequest("someMethod", undefined, 0, "\\1"), // Forward ref!
@@ -159,7 +160,7 @@ describe("Handler - Batch", () => {
     const root = new MethodMap();
     root.register("log", () => "logged");
 
-    const handler = new Handler(session, root);
+    const handler = new Handler(session, root, new NoOpCaller());
     const batch = [
       newRequest("log", { msg: "test" }, 1),
       newRequest("log", { msg: "test" }), // Notification (no id)

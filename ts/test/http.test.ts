@@ -15,12 +15,12 @@ describe("HTTP Transport", () => {
     const session = new Session();
     const root = new MethodMap();
 
-    root.register("add", (params) => {
+    root.register("add", (params, caller) => {
       const nums = params.decode<number[]>();
       return nums[0]! + nums[1]!;
     });
 
-    root.register("echo", (params) => {
+    root.register("echo", (params, caller) => {
       return params.decode();
     });
 
@@ -32,8 +32,8 @@ describe("HTTP Transport", () => {
       return counter;
     });
 
-    const handler = new Handler(session, root);
-    server = new HttpServer(handler, { port: 0 }); // Random port
+    // Handler now created by server
+    server = new HttpServer(root, { port: 0 }); // Random port
     await server.start();
     serverUrl = server.url()!;
   });

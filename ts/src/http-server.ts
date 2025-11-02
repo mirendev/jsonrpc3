@@ -3,7 +3,9 @@
  */
 
 import type { Server } from "bun";
-import type { Handler } from "./handler.ts";
+import { Session, type RpcObject } from "./session.ts";
+import { Handler } from "./handler.ts";
+import { NoOpCaller } from "./types.ts";
 import { getCodec, MimeTypeJSON } from "./encoding.ts";
 import { toRequest, toBatch, batchResponseToMessageSet } from "./types.ts";
 import { parseError, invalidRequestError } from "./error.ts";
@@ -20,13 +22,17 @@ export interface HttpServerOptions {
 export class HttpServer {
   private server?: Server;
   private codec;
+  private handler: Handler;
 
   constructor(
-    private handler: Handler,
+    rootObject: RpcObject,
     private options: HttpServerOptions = {},
   ) {
     const mimeType = options.mimeType ?? MimeTypeJSON;
     this.codec = getCodec(mimeType);
+    // HTTP requests don't support callbacks, so use NoOpCaller
+    const session = new Session();
+    this.handler = new Handler(session, rootObject, new NoOpCaller(), [mimeType]);
   }
 
   /**

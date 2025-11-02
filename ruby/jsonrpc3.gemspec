@@ -18,6 +18,8 @@ Gem::Specification.new do |spec|
   # Runtime dependencies
   spec.add_dependency "rack", "~> 3.0"
   spec.add_dependency "puma", "~> 6.0"
+  spec.add_dependency "faye-websocket", "~> 0.11"
+  spec.add_dependency "websocket", "~> 1.2"
 
   # Development dependencies
   spec.add_development_dependency "minitest", "~> 5.0"

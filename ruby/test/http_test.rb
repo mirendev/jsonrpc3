@@ -4,7 +4,7 @@ require_relative "test_helper"
 
 class HttpTest < Minitest::Test
   def setup
-    @server_session = JSONRPC3::Session.new
+    #@server_session = JSONRPC3::Session.new
     @root = JSONRPC3::MethodMap.new
 
     @root.register("add") do |params|
@@ -16,8 +16,8 @@ class HttpTest < Minitest::Test
       params.decode
     end
 
-    @handler = JSONRPC3::Handler.new(@server_session, @root)
-    @server = JSONRPC3::HttpServer.new(@handler, port: 0) # Use random available port
+    # Handler now created by server
+    @server = JSONRPC3::HttpServer.new(@root, port: 0) # Use random available port
     @server.start
 
     # Wait for server to be ready
@@ -73,7 +73,7 @@ class HttpTest < Minitest::Test
   def test_protocol_methods
     # Session ID
     session_info = @client.call("session_id", nil, "$rpc")
-    assert_equal @server_session.id, session_info["session_id"]
+    assert_kind_of String, session_info["session_id"]
 
     # Capabilities
     caps = @client.call("capabilities", nil, "$rpc")

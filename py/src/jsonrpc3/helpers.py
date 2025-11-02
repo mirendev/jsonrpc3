@@ -20,7 +20,7 @@ class MethodInfo:
         params: Optional parameter specification (dict for named params, list for positional)
     """
     name: str
-    handler: Callable[[Params], Any]
+    handler: Callable[[Params, Any], Any]
     description: Optional[str] = None
     params: Optional[Union[Dict[str, str], List[str]]] = None
 
@@ -41,7 +41,7 @@ class MethodMap(RpcObject):
     def register(
         self,
         method_name: str,
-        handler: Callable[[Params], Any],
+        handler: Callable[[Params, Any], Any],
         description: Optional[str] = None,
         params: Optional[Union[Dict[str, str], List[str]]] = None
     ) -> None:
@@ -50,7 +50,7 @@ class MethodMap(RpcObject):
 
         Args:
             method_name: Name of the method
-            handler: Callable that takes Params and returns result
+            handler: Callable that takes Params, Caller and returns result
             description: Optional human-readable description of the method
             params: Optional parameter specification. Can be:
                 - Dict[str, str] for named parameters (e.g., {"a": "number", "b": "number"})
@@ -69,7 +69,7 @@ class MethodMap(RpcObject):
         )
         self._methods[method_name] = info
 
-    def call_method(self, method: str, params: Params) -> Any:
+    def call_method(self, method: str, params: Params, caller: Any) -> Any:
         """
         Call a method on this object.
 
@@ -101,7 +101,7 @@ class MethodMap(RpcObject):
         if method_info is None:
             raise method_not_found_error(method)
 
-        return method_info.handler(params)
+        return method_info.handler(params, caller)
 
     def _get_methods(self) -> list:
         """Get list of available methods including introspection methods."""

@@ -5,6 +5,7 @@
 import type { RpcObject } from "./session.ts";
 import type { Session, RefInfo } from "./session.ts";
 import type { Params } from "./params.ts";
+import type { Caller } from "./types.ts";
 import { methodNotFoundError, invalidParamsError, referenceNotFoundError } from "./error.ts";
 
 /**
@@ -64,7 +65,7 @@ export class ProtocolHandler implements RpcObject {
     private mimeTypes: string[],
   ) {}
 
-  async callMethod(method: string, params: Params): Promise<unknown> {
+  async callMethod(method: string, params: Params, _caller: Caller): Promise<unknown> {
     switch (method) {
       case "dispose":
         return this.handleDispose(params);

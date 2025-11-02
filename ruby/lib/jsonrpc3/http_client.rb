@@ -6,6 +6,7 @@ require "uri"
 module JSONRPC3
   # HTTP Client for JSON-RPC 3.0
   class HttpClient
+    include Caller
     attr_reader :session
 
     def initialize(url, session = nil, options = {})

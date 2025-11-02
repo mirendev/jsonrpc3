@@ -8,9 +8,12 @@ module JSONRPC3
   class HttpServer
     attr_reader :handler, :port
 
-    def initialize(handler, options = {})
-      @handler = handler
-      @codec = JSONRPC3.get_codec(options[:mime_type] || MIME_TYPE_JSON)
+    def initialize(root_object, options = {})
+      mime_type = options[:mime_type] || MIME_TYPE_JSON
+      @codec = JSONRPC3.get_codec(mime_type)
+      # HTTP requests don't support callbacks, so use NoOpCaller
+      session = Session.new
+      @handler = Handler.new(session, root_object, NoOpCaller.new, [mime_type])
       @requested_port = options[:port] || 3000
       @host = options[:host] || "localhost"
       @server = nil

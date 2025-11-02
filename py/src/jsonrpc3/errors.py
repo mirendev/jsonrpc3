@@ -14,6 +14,11 @@ CODE_INVALID_REFERENCE = -32000
 CODE_REFERENCE_NOT_FOUND = -32001
 CODE_REFERENCE_TYPE_ERROR = -32002
 
+# Connection error codes
+CODE_TIMEOUT = -32004
+CODE_CONNECTION_CLOSED = -32005
+CODE_CONNECTION_ERROR = -32006
+
 
 class RpcError(Exception):
     """JSON-RPC error with code and optional data."""

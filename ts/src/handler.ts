@@ -3,7 +3,7 @@
  */
 
 import type { RpcObject, Session } from "./session.ts";
-import type { Request, Response, Batch, BatchResponse, Reference } from "./types.ts";
+import type { Request, Response, Batch, BatchResponse, Reference, Caller } from "./types.ts";
 import { Version30, newResponse, newErrorResponse, isReference, isNotification } from "./types.ts";
 import { ProtocolHandler } from "./protocol.ts";
 import { newParams, nullParams } from "./params.ts";
@@ -25,6 +25,7 @@ export class Handler {
   constructor(
     private session: Session,
     private rootObject: RpcObject,
+    private caller: Caller,
     private mimeTypes: string[] = ["application/json"],
   ) {
     this.protocol = new ProtocolHandler(session, mimeTypes);
@@ -58,7 +59,7 @@ export class Handler {
       const params = req.params !== undefined ? newParams(req.params) : nullParams;
 
       // Call method
-      const result = await obj.callMethod(req.method, params);
+      const result = await obj.callMethod(req.method, params, this.caller);
 
       // Process result for automatic reference registration
       const processedResult = this.processResult(result);

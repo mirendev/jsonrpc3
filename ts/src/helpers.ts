@@ -4,12 +4,13 @@
 
 import type { RpcObject } from "./session.ts";
 import type { Params } from "./params.ts";
+import type { Caller } from "./types.ts";
 import { methodNotFoundError, invalidParamsError } from "./error.ts";
 
 /**
  * Method handler function type
  */
-export type MethodHandler = (params: Params) => Promise<unknown> | unknown;
+export type MethodHandler = (params: Params, caller: Caller) => Promise<unknown> | unknown;
 
 /**
  * MethodInfo contains metadata about a registered method for introspection.
@@ -71,7 +72,7 @@ export class MethodMap implements RpcObject {
    * Call a method (implements RpcObject interface).
    * Automatically handles the $methods, $type, and $method introspection methods.
    */
-  async callMethod(method: string, params: Params): Promise<unknown> {
+  async callMethod(method: string, params: Params, caller: Caller): Promise<unknown> {
     // Handle introspection methods
     if (method === "$methods") {
       return this.getMethods();
@@ -90,7 +91,7 @@ export class MethodMap implements RpcObject {
     }
 
     // Call handler
-    const result = info.handler(params);
+    const result = info.handler(params, caller);
 
     // Handle both sync and async handlers
     if (result instanceof Promise) {

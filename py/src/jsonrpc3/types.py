@@ -1,12 +1,39 @@
 """Core JSON-RPC 3.0 types and data structures."""
 
 from dataclasses import dataclass, asdict
-from typing import Any, Optional, Union, List
+from typing import Any, Optional, Union, List, Protocol
 
 # Constants
 VERSION_30 = "3.0"
 MIME_TYPE_JSON = "application/json"
 MIME_TYPE_CBOR = "application/cbor"
+
+
+class Caller(Protocol):
+    """Protocol for objects that can make RPC calls."""
+
+    def call(self, method: str, params: Any = None, ref: Any = None) -> Any:
+        """Call a method and wait for response."""
+        ...
+
+    def notify(self, method: str, params: Any = None, ref: Any = None) -> None:
+        """Send a notification (no response expected)."""
+        ...
+
+
+class NoOpCaller:
+    """Caller implementation that raises errors for all operations.
+
+    Used in contexts where callbacks are not supported (e.g., HTTP requests without SSE).
+    """
+
+    def call(self, method: str, params: Any = None, ref: Any = None) -> Any:
+        """Raise error indicating callbacks are not supported."""
+        raise RuntimeError("Callbacks not supported in this context")
+
+    def notify(self, method: str, params: Any = None, ref: Any = None) -> None:
+        """Raise error indicating callbacks are not supported."""
+        raise RuntimeError("Callbacks not supported in this context")
 
 
 @dataclass(frozen=True)

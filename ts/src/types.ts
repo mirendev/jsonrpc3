@@ -52,6 +52,20 @@ export interface Caller {
 }
 
 /**
+ * NoOpCaller is a Caller implementation that throws errors for all operations.
+ * Used in contexts where callbacks are not supported (e.g., HTTP requests without SSE).
+ */
+export class NoOpCaller implements Caller {
+  async call(_method: string, _params?: unknown, _ref?: string | ReferenceType): Promise<unknown> {
+    throw new Error("Callbacks not supported in this context");
+  }
+
+  async notify(_method: string, _params?: unknown, _ref?: string | ReferenceType): Promise<void> {
+    throw new Error("Callbacks not supported in this context");
+  }
+}
+
+/**
  * Reference provides convenience methods for calling methods on a reference
  */
 export class Reference implements ReferenceType {

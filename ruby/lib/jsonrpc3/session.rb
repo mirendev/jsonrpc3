@@ -8,8 +8,9 @@ module JSONRPC3
     # Call a method on this object
     # @param method [String] method name
     # @param params [Params] method parameters
+    # @param caller [Caller] caller for making callbacks
     # @return [Object] method result
-    def call_method(method, params)
+    def call_method(method, params, caller)
       raise NotImplementedError, "#{self.class} must implement call_method"
     end
   end

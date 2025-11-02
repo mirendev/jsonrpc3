@@ -93,13 +93,15 @@ export class Peer {
     this.codec = getCodec(mimeType);
 
     this.session = options.session ?? new Session();
-    this.handler = new Handler(this.session, rootObject);
 
     this.reader = readable.getReader();
     this.writer = writable.getWriter();
 
     this.refPrefix = nanoid();
     this.abortController = new AbortController();
+
+    // Create handler with this peer as caller (for bidirectional communication)
+    this.handler = new Handler(this.session, rootObject, this);
 
     // Start read loop
     this.readLoopPromise = this.readLoop();

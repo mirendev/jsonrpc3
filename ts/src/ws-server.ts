@@ -4,7 +4,8 @@
 
 import type { Server, ServerWebSocket } from "bun";
 import { nanoid } from "nanoid";
-import type { Handler } from "./handler.ts";
+import { Session, type RpcObject } from "./session.ts";
+import { Handler } from "./handler.ts";
 import type { Request, Response, MessageSet, Reference, RequestId } from "./types.ts";
 import { newRequest, isReference, isNotification, toBatch, batchResponseToMessageSet } from "./types.ts";
 import { getCodec, MimeTypeJSON, type Codec } from "./encoding.ts";
@@ -33,13 +34,15 @@ export class WsServer {
   private server?: Server;
   private codec: Codec;
   private clients = new Map<string, WsServerClient>();
+  private mimeTypes: string[];
 
   constructor(
-    private handler: Handler,
+    private rootObject: RpcObject,
     private options: WsServerOptions = {},
   ) {
     const mimeType = options.mimeType ?? MimeTypeJSON;
     this.codec = getCodec(mimeType);
+    this.mimeTypes = [mimeType];
   }
 
   /**
@@ -65,7 +68,7 @@ export class WsServer {
       },
       websocket: {
         open: (ws) => {
-          const client = new WsServerClient(ws, this.handler, this.codec);
+          const client = new WsServerClient(ws, this.rootObject, this.codec, this.mimeTypes);
           this.clients.set(ws.data.clientId, client);
         },
         message: (ws, message) => {
@@ -136,6 +139,8 @@ export class WsServer {
  * Supports bidirectional communication - server can initiate calls to this client
  */
 export class WsServerClient {
+  private session: Session;
+  private handler: Handler;
   private pendingRequests = new Map<RequestId, PendingRequest>();
   private nextId = 1;
   private refPrefix: string;
@@ -144,10 +149,15 @@ export class WsServerClient {
 
   constructor(
     private socket: ServerWebSocket<WsData>,
-    private handler: Handler,
+    rootObject: RpcObject,
     private codec: Codec,
+    mimeTypes: string[],
   ) {
     this.refPrefix = nanoid();
+    // Create session and handler for this client connection
+    // Pass this client as the caller for bidirectional communication
+    this.session = new Session();
+    this.handler = new Handler(this.session, rootObject, this, mimeTypes);
   }
 
   /**
@@ -155,6 +165,13 @@ export class WsServerClient {
    */
   get id(): string {
     return this.socket.data.clientId;
+  }
+
+  /**
+   * Get the client session
+   */
+  getSession(): Session {
+    return this.session;
   }
 
   /**

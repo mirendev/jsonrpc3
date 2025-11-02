@@ -10,6 +10,8 @@ require_relative "jsonrpc3/protocol"
 require_relative "jsonrpc3/handler"
 require_relative "jsonrpc3/http_client"
 require_relative "jsonrpc3/http_server"
+require_relative "jsonrpc3/websocket_client"
+require_relative "jsonrpc3/websocket_server"
 require_relative "jsonrpc3/peer"
 require_relative "jsonrpc3/batch"
 

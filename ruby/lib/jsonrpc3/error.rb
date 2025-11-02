@@ -11,6 +11,11 @@ module JSONRPC3
   CODE_REFERENCE_NOT_FOUND = -32_002
   CODE_REFERENCE_TYPE_ERROR = -32_003
 
+  # Connection error codes
+  CODE_TIMEOUT = -32_004
+  CODE_CONNECTION_CLOSED = -32_005
+  CODE_CONNECTION_ERROR = -32_006
+
   # RpcError represents a JSON-RPC error
   class RpcError < StandardError
     attr_reader :code, :data

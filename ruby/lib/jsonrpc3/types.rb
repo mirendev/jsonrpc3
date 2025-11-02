@@ -5,6 +5,40 @@ module JSONRPC3
   VERSION_20 = "2.0"
   VERSION_30 = "3.0"
 
+  # Caller module - objects that can make RPC calls
+  module Caller
+    # Call a method and wait for response
+    # @param method [String] method name
+    # @param params [Object] method parameters
+    # @param ref [String, Reference, nil] optional reference to call method on
+    # @return [Object] method result
+    def call(method, params = nil, ref = nil)
+      raise NotImplementedError, "#{self.class} must implement call"
+    end
+
+    # Send a notification (no response expected)
+    # @param method [String] method name
+    # @param params [Object] method parameters
+    # @param ref [String, Reference, nil] optional reference to send notification to
+    def notify(method, params = nil, ref = nil)
+      raise NotImplementedError, "#{self.class} must implement notify"
+    end
+  end
+
+  # NoOpCaller is a Caller implementation that raises errors for all operations.
+  # Used in contexts where callbacks are not supported (e.g., HTTP requests without SSE).
+  class NoOpCaller
+    include Caller
+
+    def call(_method, _params = nil, _ref = nil)
+      raise "Callbacks not supported in this context"
+    end
+
+    def notify(_method, _params = nil, _ref = nil)
+      raise "Callbacks not supported in this context"
+    end
+  end
+
   # Reference represents an object reference in wire format
   Reference = Struct.new(:ref, keyword_init: true) do
     def to_h
@@ -92,7 +126,7 @@ module JSONRPC3
   end
 
   def self.response?(msg)
-    msg.is_a?(Hash) && (msg.key?("result") || msg.key?("error"))
+    !request?(msg)
   end
 
   def self.notification?(req)
