@@ -8,6 +8,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/gorilla/websocket"
 )
 
 const (
@@ -25,6 +27,7 @@ const (
 // HTTPHandler is an HTTP handler that serves JSON-RPC 3.0 requests.
 // It reads requests from HTTP POST bodies, processes them using a Handler,
 // and writes responses back to the HTTP response.
+// Automatically upgrades to WebSocket when upgrade headers are detected.
 // Sessions are tracked via RPC-Session-Id header and automatically expire.
 type HTTPHandler struct {
 	rootObject   Object
@@ -34,6 +37,7 @@ type HTTPHandler struct {
 	sessionMutex sync.RWMutex
 	sessionTTL   time.Duration
 	stopCleanup  chan struct{}
+	wsUpgrader   websocket.Upgrader
 }
 
 // sessionEntry tracks a session, its handler, and last access time
@@ -48,6 +52,7 @@ type sessionEntry struct {
 // The rootObject handles top-level method calls.
 // Sessions can span multiple requests via the RPC-Session-Id header.
 // Supports all three encoding formats: JSON, CBOR, and compact CBOR.
+// Automatically upgrades to WebSocket when upgrade headers are detected.
 func NewHTTPHandler(rootObject Object) *HTTPHandler {
 	h := &HTTPHandler{
 		rootObject: rootObject,
@@ -60,6 +65,16 @@ func NewHTTPHandler(rootObject Object) *HTTPHandler {
 		sessions:    make(map[string]*sessionEntry),
 		sessionTTL:  DefaultSessionTTL,
 		stopCleanup: make(chan struct{}),
+		wsUpgrader: websocket.Upgrader{
+			Subprotocols: []string{
+				"jsonrpc3.json",
+				"jsonrpc3.cbor",
+				"jsonrpc3.cbor-compact",
+			},
+			CheckOrigin: func(r *http.Request) bool {
+				return true // Allow all origins by default
+			},
+		},
 	}
 
 	// Start background cleanup goroutine
@@ -102,6 +117,12 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			h.sessionMutex.Unlock()
 		}
 		w.WriteHeader(http.StatusNoContent)
+		return
+	}
+
+	// Check for WebSocket upgrade request
+	if isWebSocketUpgrade(r) {
+		h.handleWebSocketUpgrade(w, r)
 		return
 	}
 
@@ -237,6 +258,54 @@ func (h *HTTPHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusNoContent)
 		}
 	}
+}
+
+// isWebSocketUpgrade checks if the HTTP request is a WebSocket upgrade request.
+// It checks for the necessary headers: GET method, Connection: Upgrade, and Upgrade: websocket.
+func isWebSocketUpgrade(r *http.Request) bool {
+	// Must be GET method
+	if r.Method != http.MethodGet {
+		return false
+	}
+
+	// Check Connection header contains "upgrade" (case-insensitive)
+	connection := strings.ToLower(r.Header.Get("Connection"))
+	if !strings.Contains(connection, "upgrade") {
+		return false
+	}
+
+	// Check Upgrade header is "websocket" (case-insensitive)
+	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
+	return upgrade == "websocket"
+}
+
+// handleWebSocketUpgrade upgrades the HTTP connection to WebSocket and handles it.
+// This allows the HTTP server to seamlessly support both HTTP JSON-RPC and WebSocket JSON-RPC.
+func (h *HTTPHandler) handleWebSocketUpgrade(w http.ResponseWriter, r *http.Request) {
+	// Upgrade the connection to WebSocket
+	conn, err := h.wsUpgrader.Upgrade(w, r, nil)
+	if err != nil {
+		// Upgrade failed - error response already sent by upgrader
+		return
+	}
+
+	// Determine content type from accepted subprotocol
+	contentType := MimeTypeJSON
+	selectedSubprotocol := conn.Subprotocol()
+	switch selectedSubprotocol {
+	case "jsonrpc3.cbor":
+		contentType = MimeTypeCBOR
+	case "jsonrpc3.cbor-compact":
+		contentType = MimeTypeCBORCompact
+	case "jsonrpc3.json", "":
+		contentType = MimeTypeJSON
+	}
+
+	// Create WebSocket connection handler
+	wsConn := newWebSocketConn(conn, h.rootObject, contentType, h.mimeTypes)
+
+	// Handle the connection (blocks until connection closes)
+	wsConn.handle()
 }
 
 // writeResponse encodes and writes a single response.

@@ -450,3 +450,98 @@ func TestHTTPHandler_SessionCleanupLoop(t *testing.T) {
 	// Cleanup goroutine should stop without error
 	// If it doesn't stop, the test will hang
 }
+
+func TestHTTPHandler_WebSocketUpgrade(t *testing.T) {
+	// Create handler with a simple method
+	root := NewMethodMap()
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
+		var msg string
+		if err := params.Decode(&msg); err != nil {
+			return nil, NewInvalidParamsError(err.Error())
+		}
+		return msg, nil
+	})
+
+	httpHandler := NewHTTPHandler(root)
+	defer httpHandler.Close()
+
+	// Create test server
+	server := httptest.NewServer(httpHandler)
+	defer server.Close()
+
+	// Convert http:// to ws://
+	wsURL := "ws" + server.URL[4:]
+
+	// Test WebSocket connection
+	t.Run("successful upgrade", func(t *testing.T) {
+		// Create client root object
+		clientRoot := NewMethodMap()
+
+		client, err := NewWebSocketClient(wsURL, clientRoot)
+		require.NoError(t, err)
+		defer client.Close()
+
+		// Test a simple call
+		result, err := client.Call("echo", "hello")
+		require.NoError(t, err)
+
+		var msg string
+		err = result.Decode(&msg)
+		require.NoError(t, err)
+		assert.Equal(t, "hello", msg)
+	})
+}
+
+func TestHTTPHandler_WebSocketUpgradeWithSubprotocol(t *testing.T) {
+	root := NewMethodMap()
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
+		var msg string
+		if err := params.Decode(&msg); err != nil {
+			return nil, NewInvalidParamsError(err.Error())
+		}
+		return msg, nil
+	})
+
+	httpHandler := NewHTTPHandler(root)
+	defer httpHandler.Close()
+
+	// Create test server
+	server := httptest.NewServer(httpHandler)
+	defer server.Close()
+
+	// Convert http:// to ws://
+	wsURL := "ws" + server.URL[4:]
+
+	// Test with explicit JSON content type
+	t.Run("explicit JSON content type", func(t *testing.T) {
+		// Create client root object
+		clientRoot := NewMethodMap()
+
+		client, err := NewWebSocketClient(wsURL, clientRoot, WithJSON())
+		require.NoError(t, err)
+		defer client.Close()
+
+		result, err := client.Call("echo", "test")
+		require.NoError(t, err)
+
+		var msg string
+		err = result.Decode(&msg)
+		require.NoError(t, err)
+		assert.Equal(t, "test", msg)
+	})
+}
+
+func TestHTTPHandler_NonUpgradeGETRequest(t *testing.T) {
+	root := NewMethodMap()
+	httpHandler := NewHTTPHandler(root)
+	defer httpHandler.Close()
+
+	// Create a GET request without WebSocket upgrade headers
+	httpReq := httptest.NewRequest(http.MethodGet, "/", nil)
+	recorder := httptest.NewRecorder()
+
+	httpHandler.ServeHTTP(recorder, httpReq)
+
+	// Should return Method Not Allowed since it's not a valid upgrade request
+	assert.Equal(t, http.StatusMethodNotAllowed, recorder.Code)
+}
