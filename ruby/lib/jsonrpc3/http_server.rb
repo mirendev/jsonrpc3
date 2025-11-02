@@ -2,9 +2,11 @@
 
 require "rack"
 require "puma"
+require "faye/websocket"
 
 module JSONRPC3
   # HTTP Server for JSON-RPC 3.0 using Rack
+  # Automatically upgrades to WebSocket when upgrade headers are detected
   class HttpServer
     attr_reader :handler, :port
 
@@ -23,7 +25,12 @@ module JSONRPC3
 
     # Rack call interface
     def call(env)
-      # Only accept POST requests
+      # Check for WebSocket upgrade request
+      if Faye::WebSocket.websocket?(env)
+        return handle_websocket_upgrade(env)
+      end
+
+      # Only accept POST requests for JSON-RPC
       unless env["REQUEST_METHOD"] == "POST"
         return [405, { "Content-Type" => "text/plain" }, ["Method Not Allowed"]]
       end
@@ -92,6 +99,48 @@ module JSONRPC3
     # Get server URL
     def url
       @server && @port ? "http://#{@host}:#{@port}" : nil
+    end
+
+    private
+
+    # Handle WebSocket upgrade request
+    # This allows the HTTP server to seamlessly support both HTTP JSON-RPC
+    # and WebSocket JSON-RPC without requiring separate handlers
+    def handle_websocket_upgrade(env)
+      # Upgrade to WebSocket with jsonrpc3.json subprotocol
+      ws = Faye::WebSocket.new(env, ["jsonrpc3.json"])
+
+      # Only JSON is supported for now
+      content_type = MIME_TYPE_JSON
+
+      # Reject non-JSON protocols
+      if ws.protocol && ws.protocol != "jsonrpc3.json"
+        ws.close(1002, "Only jsonrpc3.json protocol is supported")
+        return ws.rack_response
+      end
+
+      # Create connection handler - use the same root object from HTTP server
+      conn = WebSocketServerConn.new(ws, @handler.root_object, content_type, [@codec.mime_type])
+
+      # Set up event handlers
+      ws.on :open do |event|
+        conn.on_open
+      end
+
+      ws.on :message do |event|
+        conn.on_message(event.data)
+      end
+
+      ws.on :close do |event|
+        conn.on_close(event.code, event.reason)
+      end
+
+      ws.on :error do |event|
+        conn.on_error(event.message)
+      end
+
+      # Return async Rack response
+      ws.rack_response
     end
   end
 end

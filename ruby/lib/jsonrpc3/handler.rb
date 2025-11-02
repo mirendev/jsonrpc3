@@ -3,7 +3,7 @@
 module JSONRPC3
   # Handler routes requests to objects
   class Handler
-    attr_reader :session
+    attr_reader :session, :root_object
 
     def initialize(session, root_object, caller, mime_types = [MIME_TYPE_JSON])
       @session = session

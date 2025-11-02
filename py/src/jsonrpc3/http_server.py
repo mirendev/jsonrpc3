@@ -1,4 +1,11 @@
-"""HTTP server for JSON-RPC 3.0."""
+"""HTTP server for JSON-RPC 3.0.
+
+Note: This HTTP server uses Python's built-in http.server which is synchronous.
+WebSocket support requires an async framework. For production use with WebSockets,
+consider using an ASGI server like uvicorn with async handlers.
+
+This implementation detects WebSocket upgrade attempts and returns a helpful error.
+"""
 
 import http.server
 import socketserver
@@ -112,8 +119,24 @@ class HttpServer:
                     self.send_error(500, error_msg)
 
             def do_GET(self):
-                """Reject GET requests."""
-                self.send_error(405, "Method Not Allowed")
+                """Handle GET requests - check for WebSocket upgrade."""
+                # Check if this is a WebSocket upgrade request
+                upgrade = self.headers.get("Upgrade", "").lower()
+                connection = self.headers.get("Connection", "").lower()
+
+                if upgrade == "websocket" and "upgrade" in connection:
+                    # WebSocket upgrade detected - return helpful error
+                    self.send_response(501)
+                    self.send_header("Content-Type", "text/plain")
+                    self.end_headers()
+                    msg = (
+                        "WebSocket upgrade detected. This HTTP server is synchronous and does not support WebSocket upgrades.\n"
+                        "For WebSocket support, use the WebSocketHandler with an async server, or use an ASGI server like uvicorn."
+                    )
+                    self.wfile.write(msg.encode())
+                else:
+                    # Regular GET request - not allowed
+                    self.send_error(405, "Method Not Allowed")
 
         # Create threaded HTTP server
         class ThreadedHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):

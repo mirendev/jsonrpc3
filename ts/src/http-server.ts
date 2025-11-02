@@ -1,8 +1,9 @@
 /**
  * HTTP server transport using Bun.serve
+ * Automatically upgrades to WebSocket when upgrade headers are detected
  */
 
-import type { Server } from "bun";
+import type { Server, ServerWebSocket } from "bun";
 import { Session, type RpcObject } from "./session.ts";
 import { Handler } from "./handler.ts";
 import { NoOpCaller } from "./types.ts";
@@ -45,7 +46,12 @@ export class HttpServer {
     this.server = Bun.serve({
       port,
       hostname,
-      fetch: async (req) => this.handleHttp(req),
+      fetch: async (req, server) => this.handleHttp(req, server),
+      websocket: {
+        open: (ws) => this.handleWebSocketOpen(ws),
+        message: (ws, message) => this.handleWebSocketMessage(ws, message),
+        close: (ws) => this.handleWebSocketClose(ws),
+      },
     });
 
     console.log(`JSON-RPC server listening on http://${hostname}:${port}`);
@@ -72,8 +78,17 @@ export class HttpServer {
   /**
    * Handle HTTP request
    */
-  private async handleHttp(req: Request): Promise<Response> {
-    // Only accept POST
+  private async handleHttp(req: Request, server: Server): Promise<Response> {
+    // Check for WebSocket upgrade
+    if (this.isWebSocketUpgrade(req)) {
+      // Upgrade to WebSocket
+      if (server.upgrade(req)) {
+        return undefined!; // Connection was upgraded
+      }
+      return new Response("WebSocket upgrade failed", { status: 500 });
+    }
+
+    // Only accept POST for JSON-RPC
     if (req.method !== "POST") {
       return new Response("Method not allowed", { status: 405 });
     }
@@ -128,6 +143,108 @@ export class HttpServer {
     } catch (error) {
       // Internal server error
       return new Response("Internal server error", { status: 500 });
+    }
+  }
+
+  /**
+   * Check if request is a WebSocket upgrade
+   */
+  private isWebSocketUpgrade(req: Request): boolean {
+    const upgrade = req.headers.get("upgrade");
+    const connection = req.headers.get("connection");
+    return (
+      req.method === "GET" &&
+      upgrade?.toLowerCase() === "websocket" &&
+      connection?.toLowerCase().includes("upgrade") === true
+    );
+  }
+
+  /**
+   * Handle WebSocket connection open
+   */
+  private handleWebSocketOpen(ws: ServerWebSocket<unknown>): void {
+    // Create a new session and handler for this connection
+    const session = new Session();
+    const handler = new Handler(session, this.handler.rootObject, new NoOpCaller(), [
+      this.codec.mimeType(),
+    ]);
+
+    // Store session and handler in WebSocket data
+    ws.data = { session, handler, codec: this.codec };
+  }
+
+  /**
+   * Handle WebSocket message
+   */
+  private async handleWebSocketMessage(
+    ws: ServerWebSocket<{ session: Session; handler: Handler; codec: any }>,
+    message: string | Buffer,
+  ): Promise<void> {
+    try {
+      const { handler, codec } = ws.data;
+
+      // Convert message to Uint8Array
+      const msgBytes =
+        typeof message === "string"
+          ? new TextEncoder().encode(message)
+          : new Uint8Array(message);
+
+      // Decode messages
+      let msgSet;
+      try {
+        msgSet = codec.unmarshalMessages(msgBytes);
+      } catch (error) {
+        // Parse error - send error response
+        const err = parseError(error instanceof Error ? error.message : String(error));
+        const errorResp = {
+          jsonrpc: "3.0",
+          error: err.toObject(),
+          id: null,
+        };
+        const respBytes = codec.marshal(errorResp);
+        ws.send(respBytes);
+        return;
+      }
+
+      // Handle based on batch or single
+      let responseMsgSet;
+      if (msgSet.isBatch) {
+        // Batch request
+        const batch = toBatch(msgSet);
+        const batchResp = await handler.handleBatch(batch);
+        responseMsgSet = batchResponseToMessageSet(batchResp);
+      } else {
+        // Single request
+        const request = toRequest(msgSet);
+        const response = await handler.handleRequest(request);
+        if (response) {
+          responseMsgSet = {
+            messages: [response],
+            isBatch: false,
+          };
+        } else {
+          // Notification - no response
+          return;
+        }
+      }
+
+      // Encode and send response
+      const respBytes = codec.marshalMessages(responseMsgSet);
+      ws.send(respBytes);
+    } catch (error) {
+      console.error("WebSocket message handling error:", error);
+    }
+  }
+
+  /**
+   * Handle WebSocket connection close
+   */
+  private handleWebSocketClose(
+    ws: ServerWebSocket<{ session: Session; handler: Handler; codec: any }>,
+  ): void {
+    // Dispose all references in the session
+    if (ws.data?.session) {
+      ws.data.session.disposeAll();
     }
   }
 }
