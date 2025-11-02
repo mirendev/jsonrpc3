@@ -1,6 +1,7 @@
 package jsonrpc3_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -14,7 +15,7 @@ type Counter struct {
 }
 
 // CallMethod implements the jsonrpc3.Object interface
-func (c *Counter) CallMethod(method string, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+func (c *Counter) CallMethod(ctx context.Context, method string, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.Value++
@@ -41,7 +42,7 @@ func Example_remoteObject() {
 
 	// Register a method that returns an Object
 	// The handler will automatically register it and return a reference
-	root.Register("create_counter", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+	root.Register("create_counter", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var name string
 		params.Decode(&name)
 		return &Counter{Name: name, Value: 0}, nil
@@ -75,7 +76,7 @@ type Database struct {
 	Tables map[string][]string
 }
 
-func (db *Database) CallMethod(method string, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+func (db *Database) CallMethod(ctx context.Context, method string, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 	switch method {
 	case "createTable":
 		var tableName string
@@ -110,7 +111,7 @@ func Example_remoteObjectComplex() {
 	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
 	// Method that returns a structure containing an Object
-	root.Register("connect_db", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+	root.Register("connect_db", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var dbName string
 		params.Decode(&dbName)
 
@@ -165,7 +166,7 @@ func Example_remoteObjectMultiple() {
 	handler := jsonrpc3.NewHandler(session, root, jsonrpc3.NewNoOpCaller(), nil)
 
 	// Method that returns multiple Objects in a slice
-	root.Register("create_counters", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+	root.Register("create_counters", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var count int
 		params.Decode(&count)
 

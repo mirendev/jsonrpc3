@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
@@ -25,7 +26,7 @@ func main() {
 	root := jsonrpc3.NewMethodMap()
 
 	// Add method with introspection metadata
-	root.Register("add", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
@@ -40,7 +41,7 @@ func main() {
 		jsonrpc3.WithPositionalParams([]string{"number"}))
 
 	// Echo method with introspection metadata
-	root.Register("echo", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		var data any
 		if err := params.Decode(&data); err != nil {
 			return nil, jsonrpc3.NewInvalidParamsError(err.Error())
@@ -50,13 +51,13 @@ func main() {
 		jsonrpc3.WithDescription("Echoes back the input"))
 
 	// Create counter method with introspection metadata
-	root.Register("createCounter", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 		counter := jsonrpc3.NewMethodMap()
 		counter.Type = "Counter"
 		count := 0
 		var mu sync.Mutex
 
-		counter.Register("increment", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+		counter.Register("increment", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			count++
@@ -64,7 +65,7 @@ func main() {
 		},
 			jsonrpc3.WithDescription("Increments the counter by 1"))
 
-		counter.Register("getValue", func(params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
+		counter.Register("getValue", func(ctx context.Context, params jsonrpc3.Params, caller jsonrpc3.Caller) (any, error) {
 			mu.Lock()
 			defer mu.Unlock()
 			return count, nil

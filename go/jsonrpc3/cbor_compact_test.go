@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"testing"
 
 	"github.com/fxamacker/cbor/v2"
@@ -255,7 +256,7 @@ func TestRoundTrip_CompactCBOR(t *testing.T) {
 	_ = NewHandler(session, root, NewNoOpCaller(), []string{"application/cbor; format=compact"})
 
 	// Register a method
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var numbers []int
 		if err := params.Decode(&numbers); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -286,7 +287,7 @@ func TestRoundTrip_CompactCBOR(t *testing.T) {
 
 	// Process request
 	params := NewParamsWithFormat(decodedReq.Params, "application/cbor; format=compact")
-	result, err := root.CallMethod(decodedReq.Method, params, nil)
+	result, err := root.CallMethod(context.Background(), decodedReq.Method, params, nil)
 	require.NoError(t, err, "CallMethod() should not error")
 
 	assert.Equal(t, 30, result)

@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,19 +13,19 @@ func TestMethodMapIntrospection(t *testing.T) {
 	m := NewMethodMap()
 	m.Type = "TestObject"
 
-	m.Register("add", func(params Params, caller Caller) (any, error) {
+	m.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return 42, nil
 	},
 		WithDescription("Adds two numbers"),
 		WithParams(map[string]string{"a": "number", "b": "number"}),
 		WithCategory("math"))
 
-	m.Register("subtract", func(params Params, caller Caller) (any, error) {
+	m.Register("subtract", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return 10, nil
 	})
 
 	t.Run("$methods returns array of method info", func(t *testing.T) {
-		result, err := m.CallMethod("$methods", nil, nil)
+		result, err := m.CallMethod(context.Background(), "$methods", nil, nil)
 		require.NoError(t, err)
 
 		methods, ok := result.([]map[string]any)
@@ -79,7 +80,7 @@ func TestMethodMapIntrospection(t *testing.T) {
 	})
 
 	t.Run("$type", func(t *testing.T) {
-		result, err := m.CallMethod("$type", nil, nil)
+		result, err := m.CallMethod(context.Background(), "$type", nil, nil)
 		require.NoError(t, err)
 
 		typeStr, ok := result.(string)
@@ -90,7 +91,7 @@ func TestMethodMapIntrospection(t *testing.T) {
 	t.Run("$type default", func(t *testing.T) {
 		// Test default type when Type field is not set
 		m2 := NewMethodMap()
-		result, err := m2.CallMethod("$type", nil, nil)
+		result, err := m2.CallMethod(context.Background(), "$type", nil, nil)
 		require.NoError(t, err)
 
 		typeStr, ok := result.(string)
@@ -103,14 +104,14 @@ func TestMethodMapWithPositionalParams(t *testing.T) {
 	m := NewMethodMap()
 
 	// Register method with positional params
-	m.Register("multiply", func(params Params, caller Caller) (any, error) {
+	m.Register("multiply", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return 100, nil
 	},
 		WithDescription("Multiplies all provided numbers"),
 		WithPositionalParams([]string{"number", "number", "...number"}),
 		WithCategory("math"))
 
-	result, err := m.CallMethod("$methods", nil, nil)
+	result, err := m.CallMethod(context.Background(), "$methods", nil, nil)
 	require.NoError(t, err)
 
 	methods, ok := result.([]map[string]any)

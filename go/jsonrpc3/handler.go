@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -39,6 +40,9 @@ func (h *Handler) SetVersion(version string) {
 // HandleRequest processes a single request and returns a response.
 // If the request is a notification (no ID), returns nil.
 func (h *Handler) HandleRequest(req *Request) *Response {
+	// Create context for this request
+	ctx := context.Background()
+
 	// Validate request
 	if req.Method == "" {
 		return h.errorResponse(req.ID, NewInvalidRequestError("method is required"))
@@ -47,7 +51,7 @@ func (h *Handler) HandleRequest(req *Request) *Response {
 	// Handle protocol methods (on $rpc reference)
 	if req.Ref == "$rpc" {
 		params := req.GetParams()
-		result, err := h.protocol.CallMethod(req.Method, params, h.caller)
+		result, err := h.protocol.CallMethod(ctx, req.Method, params, h.caller)
 		if err != nil {
 			// Convert Go error to JSON-RPC error
 			var rpcErr *Error
@@ -90,12 +94,14 @@ func (h *Handler) HandleRequest(req *Request) *Response {
 
 // handleMethod handles a regular method call (no ref).
 func (h *Handler) handleMethod(req *Request) *Response {
+	ctx := context.Background()
+
 	if h.rootObject == nil {
 		return h.errorResponse(req.ID, NewMethodNotFoundError(req.Method))
 	}
 
 	params := req.GetParams()
-	result, err := h.rootObject.CallMethod(req.Method, params, h.caller)
+	result, err := h.rootObject.CallMethod(ctx, req.Method, params, h.caller)
 	if err != nil {
 		// Convert Go error to JSON-RPC error
 		var rpcErr *Error
@@ -129,6 +135,8 @@ func (h *Handler) handleMethod(req *Request) *Response {
 
 // handleRefMethod handles a method call on a reference.
 func (h *Handler) handleRefMethod(req *Request) *Response {
+	ctx := context.Background()
+
 	// Look up the object in session
 	obj := h.session.GetLocalRef(req.Ref)
 	if obj == nil {
@@ -136,7 +144,7 @@ func (h *Handler) handleRefMethod(req *Request) *Response {
 	}
 
 	params := req.GetParams()
-	result, err := obj.CallMethod(req.Method, params, h.caller)
+	result, err := obj.CallMethod(ctx, req.Method, params, h.caller)
 	if err != nil {
 		// Convert Go error to JSON-RPC error
 		var rpcErr *Error

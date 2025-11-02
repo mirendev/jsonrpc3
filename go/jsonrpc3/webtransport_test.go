@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -89,7 +90,7 @@ func TestWebTransportConn_ObjectRegistration(t *testing.T) {
 	handler := NewHandler(session, root, NewNoOpCaller(), []string{"application/json"})
 
 	// Register a method
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 

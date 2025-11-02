@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -32,7 +33,7 @@ func TestWebSocket_BasicConnection(t *testing.T) {
 // TestWebSocket_ClientToServerCall tests client calling server method
 func TestWebSocket_ClientToServerCall(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -67,7 +68,7 @@ func TestWebSocket_ClientToServerNotification(t *testing.T) {
 	var mu sync.Mutex
 
 	root := NewMethodMap()
-	root.Register("notify", func(params Params, caller Caller) (any, error) {
+	root.Register("notify", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		mu.Lock()
 		called = true
 		mu.Unlock()
@@ -101,7 +102,7 @@ func TestWebSocket_ServerToClientCall(t *testing.T) {
 	var connMu sync.Mutex
 
 	root := NewMethodMap()
-	root.Register("getConnection", func(params Params, caller Caller) (any, error) {
+	root.Register("getConnection", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		// This is a hack to get the server connection for testing
 		// In real code, connections would be tracked differently
 		return "ok", nil
@@ -139,7 +140,7 @@ func TestWebSocket_ServerToClientCall(t *testing.T) {
 
 	// Client with method
 	clientRoot := NewMethodMap()
-	clientRoot.Register("ping", func(params Params, caller Caller) (any, error) {
+	clientRoot.Register("ping", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "pong", nil
 	})
 
@@ -168,7 +169,7 @@ func TestWebSocket_ServerToClientCall(t *testing.T) {
 // TestWebSocket_ConcurrentRequests tests multiple concurrent requests
 func TestWebSocket_ConcurrentRequests(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("echo", func(params Params, caller Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -218,20 +219,20 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 
 	counter := &serverCounter{}
 	counterObj := NewMethodMap()
-	counterObj.Register("increment", func(params Params, caller Caller) (any, error) {
+	counterObj.Register("increment", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		counter.mu.Lock()
 		defer counter.mu.Unlock()
 		counter.count++
 		return counter.count, nil
 	})
-	counterObj.Register("getCount", func(params Params, caller Caller) (any, error) {
+	counterObj.Register("getCount", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		counter.mu.Lock()
 		defer counter.mu.Unlock()
 		return counter.count, nil
 	})
 
 	root := NewMethodMap()
-	root.Register("getCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("getCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return NewReference("counter-1"), nil
 	})
 
@@ -300,7 +301,7 @@ func TestWebSocket_ObjectRegistration(t *testing.T) {
 // TestWebSocket_ErrorHandling tests error responses
 func TestWebSocket_ErrorHandling(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("fail", func(params Params, caller Caller) (any, error) {
+	root.Register("fail", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return nil, &Error{
 			Code:    -32000,
 			Message: "Intentional error",
@@ -370,7 +371,7 @@ func TestWebSocket_Close(t *testing.T) {
 // TestWebSocket_ProtocolNegotiation tests CBOR protocol negotiation
 func TestWebSocket_ProtocolNegotiation(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 
@@ -398,7 +399,7 @@ func TestWebSocket_ProtocolNegotiation(t *testing.T) {
 // TestWebSocket_SessionManagement tests that session persists across calls
 func TestWebSocket_SessionManagement(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return &testCounter{value: 0}, nil
 	})
 

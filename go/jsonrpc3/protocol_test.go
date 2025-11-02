@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 	"time"
@@ -28,7 +29,7 @@ func TestProtocolHandler_SessionID(t *testing.T) {
 	s := NewSession()
 	h := NewProtocolHandler(s, nil)
 
-	result, err := h.CallMethod("session_id", NewParams(nil), nil)
+	result, err := h.CallMethod(context.Background(), "session_id", NewParams(nil), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -52,7 +53,7 @@ func TestProtocolHandler_Dispose(t *testing.T) {
 
 	// Dispose it
 	params, _ := json.Marshal(DisposeParams{Ref: "obj-1"})
-	result, err := h.CallMethod("dispose", NewParams(params), nil)
+	result, err := h.CallMethod(context.Background(), "dispose", NewParams(params), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -76,7 +77,7 @@ func TestProtocolHandler_DisposeRemoteRef(t *testing.T) {
 
 	// Dispose it
 	params, _ := json.Marshal(DisposeParams{Ref: "remote-1"})
-	result, err := h.CallMethod("dispose", NewParams(params), nil)
+	result, err := h.CallMethod(context.Background(), "dispose", NewParams(params), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -96,7 +97,7 @@ func TestProtocolHandler_DisposeNotFound(t *testing.T) {
 	h := NewProtocolHandler(s, nil)
 
 	params, _ := json.Marshal(DisposeParams{Ref: "non-existent"})
-	_, err := h.CallMethod("dispose", NewParams(params), nil)
+	_, err := h.CallMethod(context.Background(), "dispose", NewParams(params), nil)
 	if err == nil {
 		t.Fatal("expected error for non-existent ref")
 	}
@@ -129,7 +130,7 @@ func TestProtocolHandler_DisposeInvalidParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := h.CallMethod("dispose", NewParams(tt.params), nil)
+			_, err := h.CallMethod(context.Background(), "dispose", NewParams(tt.params), nil)
 			if err == nil {
 				t.Fatal("expected error for invalid params")
 			}
@@ -153,7 +154,7 @@ func TestProtocolHandler_ListRefs(t *testing.T) {
 	s.AddLocalRef("local-2", &dummyObject{name: "obj2"})
 	s.AddRemoteRef("remote-1", nil)
 
-	result, err := h.CallMethod("list_refs", NewParams(nil), nil)
+	result, err := h.CallMethod(context.Background(), "list_refs", NewParams(nil), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -200,7 +201,7 @@ func TestProtocolHandler_RefInfo(t *testing.T) {
 	s.AddLocalRef("obj-1", &dummyObject{name: "test-string"})
 
 	params, _ := json.Marshal(RefInfoParams{Ref: "obj-1"})
-	result, err := h.CallMethod("ref_info", NewParams(params), nil)
+	result, err := h.CallMethod(context.Background(), "ref_info", NewParams(params), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -240,7 +241,7 @@ func TestProtocolHandler_RefInfoRemote(t *testing.T) {
 	time.Sleep(10 * time.Millisecond)
 
 	params, _ := json.Marshal(RefInfoParams{Ref: "remote-1"})
-	result, err := h.CallMethod("ref_info", NewParams(params), nil)
+	result, err := h.CallMethod(context.Background(), "ref_info", NewParams(params), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -269,7 +270,7 @@ func TestProtocolHandler_RefInfoNotFound(t *testing.T) {
 	h := NewProtocolHandler(s, nil)
 
 	params, _ := json.Marshal(RefInfoParams{Ref: "non-existent"})
-	_, err := h.CallMethod("ref_info", NewParams(params), nil)
+	_, err := h.CallMethod(context.Background(), "ref_info", NewParams(params), nil)
 	if err == nil {
 		t.Fatal("expected error for non-existent ref")
 	}
@@ -302,7 +303,7 @@ func TestProtocolHandler_RefInfoInvalidParams(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := h.CallMethod("ref_info", NewParams(tt.params), nil)
+			_, err := h.CallMethod(context.Background(), "ref_info", NewParams(tt.params), nil)
 			if err == nil {
 				t.Fatal("expected error for invalid params")
 			}
@@ -328,7 +329,7 @@ func TestProtocolHandler_DisposeAll(t *testing.T) {
 	s.AddRemoteRef("remote-1", nil)
 	s.AddRemoteRef("remote-2", nil)
 
-	result, err := h.CallMethod("dispose_all", NewParams(nil), nil)
+	result, err := h.CallMethod(context.Background(), "dispose_all", NewParams(nil), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -359,7 +360,7 @@ func TestProtocolHandler_MimeTypes(t *testing.T) {
 	mimeTypes := []string{"application/json", "application/cbor", "application/cbor-compact"}
 	h := NewProtocolHandler(s, mimeTypes)
 
-	result, err := h.CallMethod("mimetypes", NewParams(nil), nil)
+	result, err := h.CallMethod(context.Background(), "mimetypes", NewParams(nil), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -390,7 +391,7 @@ func TestProtocolHandler_MimeTypesDefault(t *testing.T) {
 	s := NewSession()
 	h := NewProtocolHandler(s, nil)
 
-	result, err := h.CallMethod("mimetypes", NewParams(nil), nil)
+	result, err := h.CallMethod(context.Background(), "mimetypes", NewParams(nil), nil)
 	if err != nil {
 		t.Fatalf("Handle() error = %v", err)
 	}
@@ -412,7 +413,7 @@ func TestProtocolHandler_MethodNotFound(t *testing.T) {
 	s := NewSession()
 	h := NewProtocolHandler(s, nil)
 
-	_, err := h.CallMethod("non_existent_method", NewParams(nil), nil)
+	_, err := h.CallMethod(context.Background(), "non_existent_method", NewParams(nil), nil)
 	if err == nil {
 		t.Fatal("expected error for non-existent method")
 	}
@@ -481,7 +482,7 @@ func TestProtocolHandler_Capabilities(t *testing.T) {
 	handler := NewProtocolHandler(session, mimeTypes)
 
 	// Call capabilities method
-	result, err := handler.CallMethod("capabilities", nil, nil)
+	result, err := handler.CallMethod(context.Background(), "capabilities", nil, nil)
 	require.NoError(t, err)
 
 	capabilities, ok := result.([]string)

@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -431,7 +432,7 @@ func TestCBORIntegration(t *testing.T) {
 	_ = NewHandler(session, root, NewNoOpCaller(), []string{"application/cbor"})
 
 	// Register a method that adds two numbers
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var numbers []int
 		if err := params.Decode(&numbers); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -451,7 +452,7 @@ func TestCBORIntegration(t *testing.T) {
 
 	// Process the request using CBOR params
 	params := NewParamsWithFormat(req.Params, "cbor")
-	result, err := root.CallMethod("add", params, nil)
+	result, err := root.CallMethod(context.Background(), "add", params, nil)
 	if err != nil {
 		require.NoError(t, err, "CallMethod() should not error")
 	}
@@ -484,7 +485,7 @@ func TestMixedFormatIntegration(t *testing.T) {
 	_ = NewHandler(session, root, NewNoOpCaller(), []string{"application/json", "application/cbor"})
 
 	// Register an echo method
-	root.Register("echo", func(params Params, caller Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -495,7 +496,7 @@ func TestMixedFormatIntegration(t *testing.T) {
 	// Test with JSON
 	jsonReq, _ := NewRequestWithFormat("echo", "hello json", 1, "json")
 	jsonParams := NewParamsWithFormat(jsonReq.Params, "json")
-	jsonResult, err := root.CallMethod("echo", jsonParams, nil)
+	jsonResult, err := root.CallMethod(context.Background(), "echo", jsonParams, nil)
 	if err != nil {
 		require.NoError(t, err, "JSON CallMethod() should not error")
 	}
@@ -506,7 +507,7 @@ func TestMixedFormatIntegration(t *testing.T) {
 	// Test with CBOR
 	cborReq, _ := NewRequestWithFormat("echo", "hello cbor", 2, "cbor")
 	cborParams := NewParamsWithFormat(cborReq.Params, "cbor")
-	cborResult, err := root.CallMethod("echo", cborParams, nil)
+	cborResult, err := root.CallMethod(context.Background(), "echo", cborParams, nil)
 	if err != nil {
 		require.NoError(t, err, "CBOR CallMethod() should not error")
 	}
@@ -527,7 +528,7 @@ func TestCBORComplexTypes(t *testing.T) {
 	root := NewMethodMap()
 	_ = NewHandler(session, root, NewNoOpCaller(), nil)
 
-	root.Register("process_person", func(params Params, caller Caller) (any, error) {
+	root.Register("process_person", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var person Person
 		if err := params.Decode(&person); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -551,7 +552,7 @@ func TestCBORComplexTypes(t *testing.T) {
 
 	// Process with CBOR params
 	params := NewParamsWithFormat(req.Params, "cbor")
-	result, err := root.CallMethod("process_person", params, nil)
+	result, err := root.CallMethod(context.Background(), "process_person", params, nil)
 	if err != nil {
 		require.NoError(t, err, "CallMethod() should not error")
 	}
@@ -835,7 +836,7 @@ func TestRoundTrip_CBOR(t *testing.T) {
 	_ = NewHandler(session, root, NewNoOpCaller(), []string{"application/cbor"})
 
 	// Register a method
-	root.Register("multiply", func(params Params, caller Caller) (any, error) {
+	root.Register("multiply", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var numbers []int
 		if err := params.Decode(&numbers); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -870,7 +871,7 @@ func TestRoundTrip_CBOR(t *testing.T) {
 
 	// Process with CBOR params
 	params := NewParamsWithFormat(decodedReq.Params, "cbor")
-	result, err := root.CallMethod(decodedReq.Method, params, nil)
+	result, err := root.CallMethod(context.Background(), decodedReq.Method, params, nil)
 	if err != nil {
 		require.NoError(t, err, "CallMethod() should not error")
 	}

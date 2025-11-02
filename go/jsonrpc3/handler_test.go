@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"testing"
@@ -14,7 +15,7 @@ type dummyObject struct {
 	name string
 }
 
-func (d *dummyObject) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (d *dummyObject) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	return nil, NewMethodNotFoundError(method)
 }
 
@@ -39,7 +40,7 @@ func TestHandler_RegisterMethod(t *testing.T) {
 	_, root, h := createTestHandler()
 
 	called := false
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		called = true
 		return "ok", nil
 	})
@@ -59,7 +60,7 @@ func TestHandler_RegisterMethod(t *testing.T) {
 func TestHandler_HandleMethod(t *testing.T) {
 	_, root, h := createTestHandler()
 
-	root.Register("echo", func(params Params, caller Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, err
@@ -101,7 +102,7 @@ func TestHandler_MethodNotFound(t *testing.T) {
 func TestHandler_MethodError(t *testing.T) {
 	_, root, h := createTestHandler()
 
-	root.Register("error", func(params Params, caller Caller) (any, error) {
+	root.Register("error", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return nil, errors.New("something went wrong")
 	})
 
@@ -120,7 +121,7 @@ func TestHandler_MethodError(t *testing.T) {
 func TestHandler_MethodRPCError(t *testing.T) {
 	_, root, h := createTestHandler()
 
-	root.Register("invalid_params", func(params Params, caller Caller) (any, error) {
+	root.Register("invalid_params", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return nil, NewInvalidParamsError("wrong format")
 	})
 
@@ -140,7 +141,7 @@ func TestHandler_Notification(t *testing.T) {
 	_, root, h := createTestHandler()
 
 	called := false
-	root.Register("notify", func(params Params, caller Caller) (any, error) {
+	root.Register("notify", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		called = true
 		return "ok", nil
 	})
@@ -166,7 +167,7 @@ func TestHandler_RefMethod(t *testing.T) {
 
 	counter := &Counter{Value: 10}
 	counterObj := NewMethodMap()
-	counterObj.Register("increment", func(params Params, caller Caller) (any, error) {
+	counterObj.Register("increment", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		counter.Value++
 		return counter.Value, nil
 	})
@@ -285,7 +286,7 @@ func TestHandler_InvalidRequest(t *testing.T) {
 func TestHandler_HandleBatch(t *testing.T) {
 	_, root, h := createTestHandler()
 
-	root.Register("echo", func(params Params, caller Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, err
@@ -314,7 +315,7 @@ func TestHandler_HandleBatchWithNotifications(t *testing.T) {
 	_, root, h := createTestHandler()
 
 	called := 0
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		called++
 		return "ok", nil
 	})
@@ -334,7 +335,7 @@ func TestHandler_HandleBatchAllNotifications(t *testing.T) {
 	_, root, h := createTestHandler()
 
 	called := 0
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		called++
 		return "ok", nil
 	})
@@ -364,7 +365,7 @@ func TestHandler_SetVersion(t *testing.T) {
 	_, root, h := createTestHandler()
 	h.SetVersion(Version20)
 
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 
@@ -465,7 +466,7 @@ func TestIntrospectionIntegration(t *testing.T) {
 	root := NewMethodMap()
 	root.Type = "RootObject"
 
-	root.Register("hello", func(params Params, caller Caller) (any, error) {
+	root.Register("hello", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "world", nil
 	})
 
@@ -486,13 +487,19 @@ func TestIntrospectionIntegration(t *testing.T) {
 
 		// Decode result
 		params := NewParamsWithFormat(resp.Result, MimeTypeJSON)
-		var methods []string
+		var methods []map[string]any
 		err := params.Decode(&methods)
 		require.NoError(t, err)
 
-		assert.Contains(t, methods, "hello")
-		assert.Contains(t, methods, "$methods")
-		assert.Contains(t, methods, "$type")
+		// Extract method names from array of method info objects
+		methodNames := make([]string, len(methods))
+		for i, m := range methods {
+			methodNames[i] = m["name"].(string)
+		}
+
+		assert.Contains(t, methodNames, "hello")
+		assert.Contains(t, methodNames, "$methods")
+		assert.Contains(t, methodNames, "$type")
 	})
 
 	// Test calling $type on root object
@@ -545,7 +552,7 @@ type Counter struct {
 	Value int
 }
 
-func (c *Counter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *Counter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.Value++
@@ -562,7 +569,7 @@ type Database struct {
 	Name string
 }
 
-func (db *Database) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (db *Database) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "query":
 		var sql string
@@ -587,7 +594,7 @@ type Workspace struct {
 	Name string
 }
 
-func (w *Workspace) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (w *Workspace) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	if method == "createDocument" {
 		var p struct {
 			Title string `json:"title"`
@@ -605,7 +612,7 @@ type Document struct {
 	Content string
 }
 
-func (d *Document) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (d *Document) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	if method == "write" {
 		var content string
 		params.Decode(&content)
@@ -630,7 +637,7 @@ func TestBatchLocalRef_Basic(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that creates a counter
-	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return &Counter{Value: 0}, nil
 	})
 
@@ -675,7 +682,7 @@ func TestBatchLocalRef_DatabaseQuery(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that opens a database
-	root.Register("openDatabase", func(params Params, caller Caller) (any, error) {
+	root.Register("openDatabase", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var p struct {
 			Name string `json:"name"`
 		}
@@ -725,7 +732,7 @@ func TestBatchLocalRef_Chaining(t *testing.T) {
 	session := NewSession()
 	root := NewMethodMap()
 
-	root.Register("createWorkspace", func(params Params, caller Caller) (any, error) {
+	root.Register("createWorkspace", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var p struct {
 			Name string `json:"name"`
 		}
@@ -805,7 +812,7 @@ func TestBatchLocalRef_FailedReference(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that fails
-	root.Register("failingMethod", func(params Params, caller Caller) (any, error) {
+	root.Register("failingMethod", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return nil, &Error{
 			Code:    -32000,
 			Message: "Method failed",
@@ -848,7 +855,7 @@ func TestBatchLocalRef_NonReferenceResult(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register method that returns a plain value (not a reference)
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		params.Decode(&nums)
 		return nums[0] + nums[1], nil
@@ -923,7 +930,7 @@ func TestBatchLocalRef_MixedWithRegularRefs(t *testing.T) {
 	session.AddLocalRef("session-counter", sessionCounter)
 
 	// Register method that creates a new counter
-	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return &Counter{Value: 0}, nil
 	})
 
@@ -1101,7 +1108,7 @@ func TestBidirectionalCallback(t *testing.T) {
 	var callbackMessage string
 
 	clientRoot := NewMethodMap()
-	clientRoot.Register("onNotify", func(params Params, caller Caller) (any, error) {
+	clientRoot.Register("onNotify", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		callbackCalled = true
 		err := params.Decode(&callbackMessage)
 		if err != nil {
@@ -1114,7 +1121,7 @@ func TestBidirectionalCallback(t *testing.T) {
 	serverRoot := NewMethodMap()
 	var capturedCallbackRef string
 
-	serverRoot.Register("subscribe", func(params Params, caller Caller) (any, error) {
+	serverRoot.Register("subscribe", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var p struct {
 			Topic    string         `json:"topic"`
 			Callback Reference `json:"callback"`
@@ -1176,7 +1183,7 @@ func TestBidirectionalCallbackWithObjectReturn(t *testing.T) {
 	clientCounter := &ClientCounter{Value: 0}
 
 	clientRoot := NewMethodMap()
-	clientRoot.Register("getCounter", func(params Params, caller Caller) (any, error) {
+	clientRoot.Register("getCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return clientCounter, nil
 	})
 
@@ -1184,7 +1191,7 @@ func TestBidirectionalCallbackWithObjectReturn(t *testing.T) {
 	serverRoot := NewMethodMap()
 	var capturedCallbackRef string
 
-	serverRoot.Register("registerCallback", func(params Params, caller Caller) (any, error) {
+	serverRoot.Register("registerCallback", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var callback Reference
 		if err := params.Decode(&callback); err != nil {
 			return nil, err
@@ -1225,13 +1232,13 @@ func TestBidirectionalCallbackMultiple(t *testing.T) {
 	callCounts := make(map[string]int)
 
 	clientRoot := NewMethodMap()
-	clientRoot.Register("onEvent", func(params Params, caller Caller) (any, error) {
+	clientRoot.Register("onEvent", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var event string
 		params.Decode(&event)
 		callCounts["onEvent"]++
 		return "event: " + event, nil
 	})
-	clientRoot.Register("onError", func(params Params, caller Caller) (any, error) {
+	clientRoot.Register("onError", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var errMsg string
 		params.Decode(&errMsg)
 		callCounts["onError"]++
@@ -1241,7 +1248,7 @@ func TestBidirectionalCallbackMultiple(t *testing.T) {
 	serverRoot := NewMethodMap()
 	var callbackRef string
 
-	serverRoot.Register("registerListener", func(params Params, caller Caller) (any, error) {
+	serverRoot.Register("registerListener", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var ref Reference
 		params.Decode(&ref)
 		callbackRef = ref.Ref
@@ -1279,7 +1286,7 @@ func TestBidirectionalCallbackMultiple(t *testing.T) {
 // TestBidirectionalCallbackError tests error handling in callbacks
 func TestBidirectionalCallbackError(t *testing.T) {
 	clientRoot := NewMethodMap()
-	clientRoot.Register("failingCallback", func(params Params, caller Caller) (any, error) {
+	clientRoot.Register("failingCallback", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return nil, &Error{
 			Code:    CodeInternalError,
 			Message: "callback failed",
@@ -1289,7 +1296,7 @@ func TestBidirectionalCallbackError(t *testing.T) {
 	serverRoot := NewMethodMap()
 	var callbackRef string
 
-	serverRoot.Register("register", func(params Params, caller Caller) (any, error) {
+	serverRoot.Register("register", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var ref Reference
 		params.Decode(&ref)
 		callbackRef = ref.Ref

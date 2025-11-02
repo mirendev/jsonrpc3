@@ -1,12 +1,14 @@
 package jsonrpc3
 
+import "context"
+
 // MethodInfo contains metadata about a registered method for introspection.
 type MethodInfo struct {
 	Name        string
 	Description string
 	Params      any // Can be map[string]string for named params or []string for positional params
 	Category    string
-	handler     func(params Params, caller Caller) (any, error)
+	handler     func(ctx context.Context, params Params, caller Caller) (any, error)
 }
 
 // MethodMap is a simple Object implementation that dispatches methods to functions.
@@ -67,7 +69,7 @@ func NewMethodMap() *MethodMap {
 //	m.Register("add", addHandler,
 //	    WithDescription("Adds two numbers"),
 //	    WithParams(map[string]string{"a": "number", "b": "number"}))
-func (m *MethodMap) Register(method string, fn func(params Params, caller Caller) (any, error), opts ...RegisterOption) {
+func (m *MethodMap) Register(method string, fn func(ctx context.Context, params Params, caller Caller) (any, error), opts ...RegisterOption) {
 	info := &MethodInfo{
 		Name:    method,
 		handler: fn,
@@ -82,7 +84,7 @@ func (m *MethodMap) Register(method string, fn func(params Params, caller Caller
 
 // CallMethod implements the Object interface.
 // It automatically handles the $methods and $type introspection methods.
-func (m *MethodMap) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (m *MethodMap) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	// Handle introspection methods
 	switch method {
 	case "$methods":
@@ -95,7 +97,7 @@ func (m *MethodMap) CallMethod(method string, params Params, caller Caller) (any
 	if !exists {
 		return nil, NewMethodNotFoundError(method)
 	}
-	return info.handler(params, caller)
+	return info.handler(ctx, params, caller)
 }
 
 // getMethods returns detailed information about all methods supported by this object.

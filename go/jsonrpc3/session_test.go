@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"sync"
 	"testing"
 	"time"
@@ -11,7 +12,7 @@ type simpleObject struct {
 	value any
 }
 
-func (s *simpleObject) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (s *simpleObject) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	return nil, NewMethodNotFoundError(method)
 }
 

@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"bytes"
 	"net/http"
 	"net/http/httptest"
@@ -15,7 +16,7 @@ type bothLifecycleCounter struct {
 	closeCount   int
 }
 
-func (c *bothLifecycleCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *bothLifecycleCounter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	return nil, NewMethodNotFoundError(method)
 }
 
@@ -36,7 +37,7 @@ type disposableCounter struct {
 	disposeErrors int
 }
 
-func (c *disposableCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *disposableCounter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.value++
@@ -60,7 +61,7 @@ type closeableCounter struct {
 	closeErrors int
 }
 
-func (c *closeableCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *closeableCounter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.value++
@@ -153,7 +154,7 @@ func TestLifecycle_HTTPDelete(t *testing.T) {
 	root := NewMethodMap()
 	counter := &disposableCounter{value: 0}
 
-	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return counter, nil
 	})
 
@@ -191,7 +192,7 @@ func TestLifecycle_SessionCleanup(t *testing.T) {
 	root := NewMethodMap()
 	counter := &closeableCounter{value: 0}
 
-	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return counter, nil
 	})
 
@@ -243,11 +244,11 @@ func TestLifecycle_FullIntegration(t *testing.T) {
 	disposeCounter := &disposableCounter{}
 	closeCounter := &closeableCounter{}
 
-	root.Register("createDisposable", func(params Params, caller Caller) (any, error) {
+	root.Register("createDisposable", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return disposeCounter, nil
 	})
 
-	root.Register("createCloseable", func(params Params, caller Caller) (any, error) {
+	root.Register("createCloseable", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return closeCounter, nil
 	})
 

@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"net/http/httptest"
 	"testing"
 
@@ -13,7 +14,7 @@ type testCounter struct {
 	value int
 }
 
-func (c *testCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *testCounter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.value++
@@ -31,7 +32,7 @@ func TestHTTPIntegration_CompleteWorkflow(t *testing.T) {
 	root := NewMethodMap()
 
 	// Register calculator methods
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -43,7 +44,7 @@ func TestHTTPIntegration_CompleteWorkflow(t *testing.T) {
 		return sum, nil
 	})
 
-	root.Register("multiply", func(params Params, caller Caller) (any, error) {
+	root.Register("multiply", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -142,7 +143,7 @@ func TestHTTPIntegration_ErrorHandling(t *testing.T) {
 	root := NewMethodMap()
 	httpHandler := NewHTTPHandler(root)
 
-	root.Register("divide", func(params Params, caller Caller) (any, error) {
+	root.Register("divide", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []float64
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -194,7 +195,7 @@ func TestHTTPIntegration_ErrorHandling(t *testing.T) {
 func TestHTTPIntegration_CBOR(t *testing.T) {
 	// Create server with CBOR support
 	root := NewMethodMap()
-	root.Register("echo", func(params Params, caller Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var data map[string]any
 		if err := params.Decode(&data); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -231,7 +232,7 @@ func TestHTTPIntegration_CBOR(t *testing.T) {
 func TestHTTPIntegration_MixedBatch(t *testing.T) {
 	// Create server
 	root := NewMethodMap()
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 
@@ -278,7 +279,7 @@ func TestHTTPIntegration_Notifications(t *testing.T) {
 	root := NewMethodMap()
 
 	logMessages := []string{}
-	root.Register("log", func(params Params, caller Caller) (any, error) {
+	root.Register("log", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -352,7 +353,7 @@ func TestHTTPIntegration_SessionPersistence(t *testing.T) {
 func TestHTTPIntegration_SessionObjectReferences(t *testing.T) {
 	// Create server
 	root := NewMethodMap()
-	root.Register("createCounter", func(params Params, caller Caller) (any, error) {
+	root.Register("createCounter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		counter := &testCounter{value: 0}
 		return counter, nil
 	})

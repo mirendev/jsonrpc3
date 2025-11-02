@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -12,7 +13,7 @@ import (
 func TestHTTPClient_Call(t *testing.T) {
 	// Create test server
 	root := NewMethodMap()
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -61,7 +62,7 @@ func TestHTTPClient_Notify(t *testing.T) {
 	root := NewMethodMap()
 
 	called := false
-	root.Register("log", func(params Params, caller Caller) (any, error) {
+	root.Register("log", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		called = true
 		return nil, nil
 	})
@@ -79,7 +80,7 @@ func TestHTTPClient_Notify(t *testing.T) {
 
 func TestHTTPClient_Batch(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -126,7 +127,7 @@ func TestHTTPClient_BatchWithNotifications(t *testing.T) {
 	root := NewMethodMap()
 
 	callCount := 0
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		callCount++
 		return "ok", nil
 	})
@@ -172,7 +173,7 @@ func TestHTTPClient_BatchAllNotifications(t *testing.T) {
 	root := NewMethodMap()
 
 	callCount := 0
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		callCount++
 		return "ok", nil
 	})
@@ -222,7 +223,7 @@ func TestHTTPClient_SetContentType(t *testing.T) {
 
 func TestHTTPClient_CBOR(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("echo", func(params Params, caller Caller) (any, error) {
+	root.Register("echo", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var msg string
 		if err := params.Decode(&msg); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -283,7 +284,7 @@ func TestHTTPClient_GenerateID(t *testing.T) {
 
 func TestHTTPClient_NilResult(t *testing.T) {
 	root := NewMethodMap()
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 

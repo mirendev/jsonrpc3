@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 
@@ -16,7 +17,7 @@ func TestIntegration_BasicWorkflow(t *testing.T) {
 	handler := NewHandler(session, root, NewNoOpCaller(), nil)
 
 	// Register a simple method
-	root.Register("add", func(params Params, caller Caller) (any, error) {
+	root.Register("add", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -61,7 +62,7 @@ type IntegrationCounter struct {
 	Value int
 }
 
-func (c *IntegrationCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *IntegrationCounter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.Value++
@@ -81,7 +82,7 @@ func TestIntegration_References(t *testing.T) {
 
 	// Register a method that returns an Object
 	// It will be automatically registered and returned as a Reference
-	root.Register("create_counter", func(params Params, caller Caller) (any, error) {
+	root.Register("create_counter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return &IntegrationCounter{Value: 0}, nil
 	})
 
@@ -184,7 +185,7 @@ func TestIntegration_BatchRequests(t *testing.T) {
 	root := NewMethodMap()
 	handler := NewHandler(session, root, NewNoOpCaller(), nil)
 
-	root.Register("multiply", func(params Params, caller Caller) (any, error) {
+	root.Register("multiply", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []int
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -238,7 +239,7 @@ func TestIntegration_ErrorPropagation(t *testing.T) {
 	root := NewMethodMap()
 	handler := NewHandler(session, root, NewNoOpCaller(), nil)
 
-	root.Register("divide", func(params Params, caller Caller) (any, error) {
+	root.Register("divide", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var nums []float64
 		if err := params.Decode(&nums); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -285,7 +286,7 @@ type IntegrationDatabase struct {
 	Tables map[string][]string
 }
 
-func (db *IntegrationDatabase) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (db *IntegrationDatabase) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "create_table":
 		var tableName string
@@ -341,7 +342,7 @@ func TestIntegration_ComplexReferenceScenario(t *testing.T) {
 
 	// Method to create a database reference
 	// Returns an Object that will be auto-registered
-	root.Register("create_database", func(params Params, caller Caller) (any, error) {
+	root.Register("create_database", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var name string
 		if err := params.Decode(&name); err != nil {
 			return nil, NewInvalidParamsError(err.Error())
@@ -406,7 +407,7 @@ func TestIntegration_VersionNegotiation(t *testing.T) {
 	// Set handler to use 2.0
 	handler.SetVersion(Version20)
 
-	root.Register("test", func(params Params, caller Caller) (any, error) {
+	root.Register("test", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return "ok", nil
 	})
 

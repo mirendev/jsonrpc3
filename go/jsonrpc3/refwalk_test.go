@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"encoding/json"
 	"testing"
 )
@@ -10,7 +11,7 @@ type TestCounter struct {
 	Value int
 }
 
-func (c *TestCounter) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (c *TestCounter) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "increment":
 		c.Value++
@@ -270,7 +271,7 @@ func TestHandler_ObjectIntegration(t *testing.T) {
 	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	// Register a method that returns an Object
-	root.Register("create_counter", func(params Params, caller Caller) (any, error) {
+	root.Register("create_counter", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		var initial int
 		if params != nil {
 			params.Decode(&initial)
@@ -325,7 +326,7 @@ func TestHandler_ObjectReturningObject(t *testing.T) {
 	h := NewHandler(s, root, NewNoOpCaller(), nil)
 
 	// Register a method that returns multiple Objects
-	root.Register("create_pair", func(params Params, caller Caller) (any, error) {
+	root.Register("create_pair", func(ctx context.Context, params Params, caller Caller) (any, error) {
 		return map[string]any{
 			"counter1": &TestCounter{Value: 1},
 			"counter2": &TestCounter{Value: 2},

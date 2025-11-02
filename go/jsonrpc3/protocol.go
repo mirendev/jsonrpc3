@@ -1,6 +1,7 @@
 package jsonrpc3
 
 import (
+	"context"
 	"fmt"
 )
 
@@ -59,7 +60,7 @@ type MimeTypesResult struct {
 }
 
 // CallMethod implements the Object interface for protocol methods.
-func (h *ProtocolHandler) CallMethod(method string, params Params, caller Caller) (any, error) {
+func (h *ProtocolHandler) CallMethod(ctx context.Context, method string, params Params, caller Caller) (any, error) {
 	switch method {
 	case "dispose":
 		return h.handleDispose(params)
