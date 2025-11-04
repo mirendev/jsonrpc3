@@ -9,12 +9,16 @@ import (
 	"strings"
 
 	"miren.dev/jsonrpc3/go/jsonrpc3"
+	"miren.dev/jsonrpc3/go/jsonrpc3/pkg/shell"
 	"miren.dev/mflags"
 )
 
 func main() {
 	fs := mflags.NewFlagSet("rpcurl")
 	paramsFlag := fs.String("params", 'p', "", "JSON parameters (overrides positional args)")
+	shellFlag := fs.Bool("shell", 'i', false, "Interactive shell mode")
+	sessionFile := fs.String("session", 's', "", "Session file to execute in shell mode")
+	verbose := fs.Bool("verbose", 'v', false, "Verbose output (shows commands when running session file)")
 
 	if err := fs.Parse(os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "Error parsing flags: %v\n", err)
@@ -24,12 +28,17 @@ func main() {
 	args := fs.Args()
 
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: rpcurl <url> [method] [args...]\n")
+		fmt.Fprintf(os.Stderr, "Usage: rpcurl <url> [method] [args...] [flags]\n")
+		fmt.Fprintf(os.Stderr, "\nModes:\n")
+		fmt.Fprintf(os.Stderr, "  rpcurl <url> [method] [args...]         # One-shot command\n")
+		fmt.Fprintf(os.Stderr, "  rpcurl <url> --shell                    # Interactive shell\n")
+		fmt.Fprintf(os.Stderr, "  rpcurl <url> --session <file>           # Run session file\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
 		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com              # List methods\n")
 		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com add a:1 b:2  # Call with map params\n")
 		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com sum 1 2 3    # Call with array params\n")
 		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com echo --params '{\"text\":\"hello\"}'\n")
+		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com --shell      # Start interactive shell\n")
 		os.Exit(1)
 	}
 
@@ -60,6 +69,25 @@ func main() {
 		os.Exit(1)
 	}
 	defer client.Close()
+
+	// Handle shell mode
+	if *shellFlag || *sessionFile != "" {
+		sh := shell.New(client)
+		sh.SetVerbose(*verbose)
+
+		if *sessionFile != "" {
+			if err := sh.RunFile(*sessionFile); err != nil {
+				fmt.Fprintf(os.Stderr, "Error running session file: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			if err := sh.Run(); err != nil {
+				fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+				os.Exit(1)
+			}
+		}
+		return
+	}
 
 	// If no method provided, call $methods
 	if method == "" {
