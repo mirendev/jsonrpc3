@@ -134,5 +134,5 @@ jobs:
 
       - name: Build tools
         run: |
-          go build ./cmd/rpcurl
+          go build ./cmd/ripcurl
           go build ./testutils/testserver

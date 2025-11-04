@@ -14,7 +14,7 @@ import (
 )
 
 func main() {
-	fs := mflags.NewFlagSet("rpcurl")
+	fs := mflags.NewFlagSet("ripcurl")
 	paramsFlag := fs.String("params", 'p', "", "JSON parameters (overrides positional args)")
 	shellFlag := fs.Bool("shell", 'i', false, "Interactive shell mode")
 	sessionFile := fs.String("session", 's', "", "Session file to execute in shell mode")
@@ -28,17 +28,17 @@ func main() {
 	args := fs.Args()
 
 	if len(args) < 1 {
-		fmt.Fprintf(os.Stderr, "Usage: rpcurl <url> [method] [args...] [flags]\n")
+		fmt.Fprintf(os.Stderr, "Usage: ripcurl <url> [method] [args...] [flags]\n")
 		fmt.Fprintf(os.Stderr, "\nModes:\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl <url> [method] [args...]         # One-shot command\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl <url> --shell                    # Interactive shell\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl <url> --session <file>           # Run session file\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl <url> [method] [args...]         # One-shot command\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl <url> --shell                    # Interactive shell\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl <url> --session <file>           # Run session file\n")
 		fmt.Fprintf(os.Stderr, "\nExamples:\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com              # List methods\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com add a:1 b:2  # Call with map params\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com sum 1 2 3    # Call with array params\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com echo --params '{\"text\":\"hello\"}'\n")
-		fmt.Fprintf(os.Stderr, "  rpcurl https://example.com --shell      # Start interactive shell\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl https://example.com              # List methods\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl https://example.com add a:1 b:2  # Call with map params\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl https://example.com sum 1 2 3    # Call with array params\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl https://example.com echo --params '{\"text\":\"hello\"}'\n")
+		fmt.Fprintf(os.Stderr, "  ripcurl https://example.com --shell      # Start interactive shell\n")
 		os.Exit(1)
 	}
 
