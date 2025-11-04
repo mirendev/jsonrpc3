@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/evanphx/jsonrpc3"
-	"github.com/evanphx/jsonrpc3/pkg/shell"
+	"miren.dev/jsonrpc3/go/jsonrpc3"
+	"miren.dev/jsonrpc3/go/jsonrpc3/pkg/shell"
 	"miren.dev/mflags"
 )
 

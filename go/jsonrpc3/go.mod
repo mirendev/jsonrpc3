@@ -1,4 +1,4 @@
-module github.com/evanphx/jsonrpc3
+module miren.dev/jsonrpc3/go/jsonrpc3
 
 go 1.25.1
 

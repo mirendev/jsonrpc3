@@ -12,7 +12,7 @@ import (
 	"sync"
 	"syscall"
 
-	"github.com/evanphx/jsonrpc3"
+	"miren.dev/jsonrpc3/go/jsonrpc3"
 )
 
 func main() {

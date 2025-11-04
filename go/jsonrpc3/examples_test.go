@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 
-	"github.com/evanphx/jsonrpc3"
+	"miren.dev/jsonrpc3/go/jsonrpc3"
 )
 
 // exampleObject is a simple Object implementation for examples.

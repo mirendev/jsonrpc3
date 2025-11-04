@@ -5,7 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/evanphx/jsonrpc3"
+	"miren.dev/jsonrpc3/go/jsonrpc3"
 )
 
 // Counter is a simple object that implements Object

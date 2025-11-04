@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/chzyer/readline"
-	"github.com/evanphx/jsonrpc3"
+	"miren.dev/jsonrpc3/go/jsonrpc3"
 )
 
 // Shell provides an interactive shell for JSON-RPC 3.0 servers.
