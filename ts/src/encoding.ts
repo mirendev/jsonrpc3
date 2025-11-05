@@ -121,13 +121,13 @@ export class JsonCodec implements Codec {
       if (typeof obj.method !== "string") {
         throw new Error("Request method must be a string");
       }
-      return obj as Message;
+      return obj as unknown as Message;
     } else if ("result" in obj || "error" in obj) {
       // It's a response
       if (!("id" in obj)) {
         throw new Error("Response missing id field");
       }
-      return obj as Message;
+      return obj as unknown as Message;
     } else {
       throw new Error("Message must be either a request or response");
     }

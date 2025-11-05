@@ -115,7 +115,7 @@ export class BatchResults {
         `Index ${index} out of bounds (batch size: ${this.responses.length})`
       );
     }
-    return this.responses[index];
+    return this.responses[index] ?? null;
   }
 
   /**

@@ -103,7 +103,9 @@ export class Handler {
         }
 
         // Create modified request with resolved ref
-        const resolvedReq: Request = { ...req, ref: resolvedRef };
+        const resolvedReq: Request = resolvedRef
+          ? { ...req, ref: resolvedRef }
+          : { ...req };
 
         // Handle the request
         const resp = await this.handleRequest(resolvedReq);

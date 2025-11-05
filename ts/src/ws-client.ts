@@ -4,7 +4,7 @@
  */
 
 import { nanoid } from "nanoid";
-import type { Session, RpcObject } from "./session.ts";
+import { Session, type RpcObject } from "./session.ts";
 import type { Request, Response, MessageSet, BatchResponse, ReferenceType, RequestId } from "./types.ts";
 import { newRequest, isReference, isNotification, toBatch, batchResponseToMessageSet, Reference } from "./types.ts";
 import { Handler } from "./handler.ts";
