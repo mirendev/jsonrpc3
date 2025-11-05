@@ -10,6 +10,7 @@ import { RpcError } from "./error.ts";
 
 export interface HttpClientOptions {
   mimeType?: string;
+  headers?: Record<string, string>;
 }
 
 /**
@@ -77,6 +78,7 @@ export class HttpClient {
 
     const headers: Record<string, string> = {
       "Content-Type": this.codec.mimeType(),
+      ...this.options.headers, // Add custom headers
     };
 
     // Include session ID if we have one
@@ -141,6 +143,7 @@ export class HttpClient {
 
     const headers: Record<string, string> = {
       "Content-Type": this.codec.mimeType(),
+      ...this.options.headers, // Add custom headers
     };
 
     // Include session ID if we have one
@@ -174,6 +177,7 @@ export class HttpClient {
 
     const headers: Record<string, string> = {
       "Content-Type": this.codec.mimeType(),
+      ...this.options.headers, // Add custom headers
     };
 
     // Include session ID if we have one

@@ -27,6 +27,7 @@ class HttpClient:
         url: str,
         session: Optional[Session] = None,
         mime_type: str = MIME_TYPE_JSON,
+        headers: Optional[dict[str, str]] = None,
     ):
         """
         Initialize HTTP client.
@@ -35,10 +36,12 @@ class HttpClient:
             url: Server URL
             session: Optional session (created if not provided)
             mime_type: MIME type for encoding
+            headers: Optional custom headers to send with each request
         """
         self.url = url
         self.session = session or Session()
         self._codec = get_codec(mime_type)
+        self._headers = headers or {}
         self._request_id = 0
         self._mutex = threading.Lock()
 
@@ -174,7 +177,7 @@ class HttpClient:
 
         try:
             # Send request
-            headers = {"Content-Type": self._codec.mime_type}
+            headers = {"Content-Type": self._codec.mime_type, **self._headers}
             conn.request("POST", self._path, req_bytes, headers)
 
             # Get response

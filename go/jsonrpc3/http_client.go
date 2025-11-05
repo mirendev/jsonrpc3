@@ -27,6 +27,7 @@ type HTTPClient struct {
 	url         string
 	httpClient  *http.Client
 	contentType string
+	headers     http.Header
 	nextID      atomic.Int64
 
 	// Callback support (lazily initialized)
@@ -122,6 +123,30 @@ func (c *HTTPClient) SetContentType(contentType string) {
 	c.contentType = contentType
 }
 
+// SetHeader sets a custom header to be sent with all requests.
+// This can be used to set authentication headers or other custom headers.
+func (c *HTTPClient) SetHeader(key, value string) {
+	if c.headers == nil {
+		c.headers = make(http.Header)
+	}
+	c.headers.Set(key, value)
+}
+
+// AddHeader adds a custom header to be sent with all requests.
+// Unlike SetHeader, this allows multiple values for the same key.
+func (c *HTTPClient) AddHeader(key, value string) {
+	if c.headers == nil {
+		c.headers = make(http.Header)
+	}
+	c.headers.Add(key, value)
+}
+
+// SetHeaders sets all custom headers to be sent with requests.
+// This replaces any previously set custom headers.
+func (c *HTTPClient) SetHeaders(headers http.Header) {
+	c.headers = headers.Clone()
+}
+
 // GetSession returns the client's session for registering local callback objects.
 // The session is lazily created on first access.
 // Use this to register callback objects that the server can invoke via notifications.
@@ -202,6 +227,13 @@ func (c *HTTPClient) doRequest(reqData []byte, contentType string) (*http.Respon
 	// Add session ID header if we have one
 	if sessionID := c.SessionID(); sessionID != "" {
 		httpReq.Header.Set("RPC-Session-Id", sessionID)
+	}
+
+	// Add custom headers
+	for key, values := range c.headers {
+		for _, value := range values {
+			httpReq.Header.Add(key, value)
+		}
 	}
 
 	httpResp, err := c.httpClient.Do(httpReq)

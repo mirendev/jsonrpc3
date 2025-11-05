@@ -14,6 +14,7 @@ module JSONRPC3
       @uri = URI.parse(url)
       @session = session || Session.new
       @codec = JSONRPC3.get_codec(options[:mime_type] || MIME_TYPE_JSON)
+      @headers = options[:headers] || {}
       @request_id = 0
       @mutex = Mutex.new
     end
@@ -98,6 +99,12 @@ module JSONRPC3
 
       request = Net::HTTP::Post.new(@uri.path.empty? ? "/" : @uri.path)
       request["Content-Type"] = @codec.mime_type
+
+      # Add custom headers
+      @headers.each do |key, value|
+        request[key] = value
+      end
+
       request.body = req_bytes
 
       response = http.request(request)

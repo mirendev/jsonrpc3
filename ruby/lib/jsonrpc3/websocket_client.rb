@@ -26,6 +26,7 @@ module JSONRPC3
       @root_object = root_object
       @mime_type = options[:mime_type] || MIME_TYPE_JSON
       @codec = JSONRPC3.get_codec(@mime_type)
+      @headers = options[:headers] || {}
 
       @session = Session.new
       # Pass this client as caller for bidirectional communication
@@ -213,7 +214,8 @@ module JSONRPC3
       @socket = TCPSocket.new(uri.host, uri.port || 80)
 
       # Perform WebSocket handshake
-      @handshake = WebSocket::Handshake::Client.new(url: @url, headers: { "Sec-WebSocket-Protocol" => "jsonrpc3.json" })
+      handshake_headers = { "Sec-WebSocket-Protocol" => "jsonrpc3.json" }.merge(@headers)
+      @handshake = WebSocket::Handshake::Client.new(url: @url, headers: handshake_headers)
       @socket.write(@handshake.to_s)
 
       # Read handshake response

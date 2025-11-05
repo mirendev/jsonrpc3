@@ -20,6 +20,7 @@ type HTTP2Client struct {
 	handler     *Handler
 	rootObject  Object
 	contentType string
+	headers     http.Header
 
 	// HTTP/2 connection
 	httpClient *http.Client
@@ -94,6 +95,7 @@ func newHTTP2Client(url string, rootObject Object, options *clientOptions) (*HTT
 		handler:     nil, // Will be set below
 		rootObject:  rootObject,
 		contentType: options.contentType,
+		headers:     options.headers.Clone(),
 		httpClient:  httpClient,
 		refPrefix:   generateConnID(),
 		writeChan:   make(chan any, 100),
@@ -131,6 +133,13 @@ func (c *HTTP2Client) connect() error {
 
 	req.Header.Set("Content-Type", c.contentType)
 	req.Header.Set("Accept", c.contentType)
+
+	// Add custom headers
+	for key, values := range c.headers {
+		for _, value := range values {
+			req.Header.Add(key, value)
+		}
+	}
 
 	// Make request in background
 	respChan := make(chan *http.Response, 1)

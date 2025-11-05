@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -48,6 +49,7 @@ type WebSocketClient struct {
 type clientOptions struct {
 	contentType string
 	tlsConfig   *tls.Config
+	headers     http.Header
 }
 
 // ClientOption is a functional option for configuring a WebSocketClient.
@@ -78,6 +80,26 @@ func WithCompactCBOR() ClientOption {
 func WithTLSConfig(tlsConfig *tls.Config) ClientOption {
 	return func(o *clientOptions) {
 		o.tlsConfig = tlsConfig
+	}
+}
+
+// WithHeader adds a custom header to be sent with requests.
+// For WebSocket clients, headers are sent during the initial handshake.
+// Can be called multiple times to add multiple headers.
+func WithHeader(key, value string) ClientOption {
+	return func(o *clientOptions) {
+		if o.headers == nil {
+			o.headers = make(http.Header)
+		}
+		o.headers.Add(key, value)
+	}
+}
+
+// WithHeaders sets multiple custom headers to be sent with requests.
+// This replaces any headers previously set.
+func WithHeaders(headers http.Header) ClientOption {
+	return func(o *clientOptions) {
+		o.headers = headers.Clone()
 	}
 }
 
@@ -120,7 +142,13 @@ func newWebSocketClient(url string, rootObject Object, options *clientOptions) (
 		Subprotocols: []string{protocol},
 	}
 
-	conn, resp, err := dialer.DialContext(ctx, url, nil)
+	// Prepare headers for WebSocket handshake
+	headers := options.headers.Clone()
+	if headers == nil {
+		headers = make(http.Header)
+	}
+
+	conn, resp, err := dialer.DialContext(ctx, url, headers)
 	if err != nil {
 		cancel()
 		return nil, fmt.Errorf("failed to connect to %s: %w", url, err)

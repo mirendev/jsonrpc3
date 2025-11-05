@@ -15,6 +15,7 @@ export interface WsClientOptions {
   mimeType?: string;
   session?: Session;
   rootObject?: RpcObject;
+  headers?: Record<string, string>; // Note: Browser WebSocket API doesn't support custom headers
 }
 
 interface PendingRequest {

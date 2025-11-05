@@ -36,6 +36,7 @@ class WebSocketClient:
         url: str,
         root_object: Optional[Any] = None,
         mime_type: str = MIME_TYPE_JSON,
+        headers: Optional[dict[str, str]] = None,
     ):
         """
         Initialize WebSocket client.
@@ -44,11 +45,13 @@ class WebSocketClient:
             url: WebSocket URL (ws:// or wss://)
             root_object: Optional object to handle incoming calls from server
             mime_type: MIME type for encoding (default: application/json)
+            headers: Optional custom headers for WebSocket handshake
         """
         self.url = url
         self._root_object = root_object
         self._mime_type = mime_type
         self._codec = get_codec(mime_type)
+        self._headers = headers or {}
 
         self.session = Session()
         self._handler = Handler(self.session, root_object, self, [mime_type])
@@ -88,6 +91,7 @@ class WebSocketClient:
         self._ws = await websockets.connect(
             self.url,
             subprotocols=[subprotocol],
+            extra_headers=self._headers,
         )
 
         # Start read and write tasks
