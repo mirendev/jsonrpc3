@@ -3,20 +3,55 @@
   "version": "0.1.0",
   "description": "JSON-RPC 3.0 TypeScript implementation",
   "type": "module",
+  "main": "./dist/browser.esm.js",
+  "module": "./dist/browser.esm.js",
+  "browser": "./dist/browser.esm.js",
+  "types": "./dist/browser.d.ts",
   "exports": {
-    ".": "./src/index.ts",
-    "./http": "./src/http-server.ts",
-    "./client": "./src/http-client.ts",
-    "./peer": "./src/peer.ts",
-    "./ws": "./src/ws-server.ts",
-    "./ws-client": "./src/ws-client.ts"
+    ".": {
+      "bun": "./src/index.ts",
+      "browser": "./dist/browser.esm.js",
+      "import": "./dist/browser.esm.js",
+      "types": "./dist/browser.d.ts"
+    },
+    "./http": {
+      "bun": "./src/http-server.ts",
+      "default": null
+    },
+    "./client": {
+      "bun": "./src/http-client.ts",
+      "browser": "./dist/browser.esm.js",
+      "import": "./dist/browser.esm.js"
+    },
+    "./peer": {
+      "bun": "./src/peer.ts",
+      "browser": "./dist/browser.esm.js",
+      "import": "./dist/browser.esm.js"
+    },
+    "./ws": {
+      "bun": "./src/ws-server.ts",
+      "default": null
+    },
+    "./ws-client": {
+      "bun": "./src/ws-client.ts",
+      "browser": "./dist/browser.esm.js",
+      "import": "./dist/browser.esm.js"
+    }
   },
+  "files": [
+    "dist",
+    "src",
+    "README.md"
+  ],
   "scripts": {
+    "build": "bun run build.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "prepublishOnly": "bun run build"
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "esbuild": "^0.24.2",
     "typescript": "^5"
   },
   "dependencies": {
