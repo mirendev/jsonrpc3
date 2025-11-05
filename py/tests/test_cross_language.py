@@ -44,7 +44,7 @@ def go_server():
     go_server_path = test_dir.parent.parent / "go" / "jsonrpc3" / "testserver"
 
     if not go_server_path.exists():
-        pytest.fail(f"Go test server not found at {go_server_path}")
+        pytest.skip(f"Go test server not found at {go_server_path}")
 
     # Start server
     process = subprocess.Popen(
