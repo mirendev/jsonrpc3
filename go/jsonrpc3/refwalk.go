@@ -80,8 +80,15 @@ func walkSlice(handler *Handler, v reflect.Value) reflect.Value {
 		return v
 	}
 
-	// Create a new slice of the same type
-	newSlice := reflect.MakeSlice(v.Type(), length, length)
+	// Create a new slice or array of the same type
+	var newSlice reflect.Value
+	if v.Kind() == reflect.Array {
+		// For arrays, we need to create a new array value
+		newSlice = reflect.New(v.Type()).Elem()
+	} else {
+		// For slices, use MakeSlice
+		newSlice = reflect.MakeSlice(v.Type(), length, length)
+	}
 	modified := false
 
 	for i := 0; i < length; i++ {

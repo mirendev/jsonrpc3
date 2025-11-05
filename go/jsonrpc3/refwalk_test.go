@@ -360,3 +360,88 @@ func TestHandler_ObjectReturningObject(t *testing.T) {
 		t.Error("counter2 should be registered")
 	}
 }
+
+// TestProcessResult_FixedSizeArray tests that processResult can handle
+// fixed-size arrays without panicking (issue with reflect.MakeSlice on arrays)
+func TestProcessResult_FixedSizeArray(t *testing.T) {
+	s := NewSession()
+	root := NewMethodMap()
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
+
+	// Test with a fixed-size byte array
+	type HashResult struct {
+		Hash [32]byte
+		Name string
+	}
+
+	hash := [32]byte{
+		0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08,
+		0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10,
+		0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18,
+		0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20,
+	}
+
+	result := HashResult{
+		Hash: hash,
+		Name: "test-hash",
+	}
+
+	// This should not panic
+	processed := processResult(h, result)
+
+	// Verify the result is processed correctly
+	processedStruct, ok := processed.(HashResult)
+	if !ok {
+		t.Fatalf("expected HashResult, got %T", processed)
+	}
+
+	if processedStruct.Name != "test-hash" {
+		t.Errorf("Name: got %v, want test-hash", processedStruct.Name)
+	}
+
+	if processedStruct.Hash != hash {
+		t.Errorf("Hash array was modified")
+	}
+}
+
+// TestProcessResult_FixedSizeArrayWithObject tests a fixed-size array
+// containing Objects that need to be converted to References
+func TestProcessResult_FixedSizeArrayWithObject(t *testing.T) {
+	s := NewSession()
+	root := NewMethodMap()
+	h := NewHandler(s, root, NewNoOpCaller(), nil)
+
+	counter1 := &TestCounter{Value: 1}
+	counter2 := &TestCounter{Value: 2}
+	counter3 := &TestCounter{Value: 3}
+
+	// Fixed-size array of Objects
+	result := [3]any{counter1, counter2, counter3}
+
+	// This should not panic
+	processed := processResult(h, result)
+
+	processedArray, ok := processed.([3]any)
+	if !ok {
+		t.Fatalf("expected [3]any, got %T", processed)
+	}
+
+	// All three should be converted to References
+	for i := 0; i < 3; i++ {
+		ref, ok := processedArray[i].(Reference)
+		if !ok {
+			t.Errorf("element %d should be Reference, got %T", i, processedArray[i])
+			continue
+		}
+
+		if ref.Ref == "" {
+			t.Errorf("element %d: Reference should have non-empty Ref", i)
+		}
+
+		// Verify it's registered in session
+		obj := h.session.GetLocalRef(ref.Ref)
+		if obj == nil {
+			t.Errorf("element %d: Object should be registered in session", i)
+		}
+	}
+}
