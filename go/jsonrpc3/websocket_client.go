@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -45,11 +46,16 @@ type WebSocketClient struct {
 	errMu   sync.RWMutex
 }
 
+// DialTLSContextFunc is a function that establishes a TLS connection.
+// Used by WithDialer to customize connection establishment (e.g., Unix sockets).
+type DialTLSContextFunc func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error)
+
 // clientOptions holds common configuration options for JSON-RPC clients.
 type clientOptions struct {
-	contentType string
-	tlsConfig   *tls.Config
-	headers     http.Header
+	contentType    string
+	tlsConfig      *tls.Config
+	headers        http.Header
+	dialTLSContext DialTLSContextFunc
 }
 
 // ClientOption is a functional option for configuring a WebSocketClient.
@@ -100,6 +106,24 @@ func WithHeader(key, value string) ClientOption {
 func WithHeaders(headers http.Header) ClientOption {
 	return func(o *clientOptions) {
 		o.headers = headers.Clone()
+	}
+}
+
+// WithDialer sets a custom TLS dialer for establishing connections.
+// This is useful for connecting over Unix sockets or other custom transports.
+//
+// Example for Unix socket:
+//
+//	WithDialer(func(ctx context.Context, network, addr string, cfg *tls.Config) (net.Conn, error) {
+//	    conn, err := net.Dial("unix", "/path/to/socket")
+//	    if err != nil {
+//	        return nil, err
+//	    }
+//	    return tls.Client(conn, cfg), nil
+//	})
+func WithDialer(dialTLSContext DialTLSContextFunc) ClientOption {
+	return func(o *clientOptions) {
+		o.dialTLSContext = dialTLSContext
 	}
 }
 

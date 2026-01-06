@@ -15,11 +15,27 @@ import (
 
 // HTTP2Server represents an HTTP/2 server for JSON-RPC 3.0.
 // It uses HTTP/2 streams for efficient bidirectional communication.
+// Sessions are tracked via the RPC-Session-Id header, allowing clients
+// to resume sessions across reconnects.
 type HTTP2Server struct {
 	rootObject Object
 	mimeTypes  []string
 	server     *http.Server
 	addr       string
+
+	// Session management
+	sessions     map[string]*http2SessionEntry
+	sessionMutex sync.RWMutex
+	cleanupDone  chan struct{}
+}
+
+// http2SessionEntry represents a session with its active connection.
+// Only one connection per session is allowed; reconnecting closes the old connection.
+type http2SessionEntry struct {
+	session      *Session
+	conn         *HTTP2Conn // Active connection (nil if disconnected)
+	lastAccessed time.Time
+	mutex        sync.Mutex
 }
 
 // HTTP2Conn represents a single HTTP/2 connection handling JSON-RPC requests.
@@ -28,6 +44,9 @@ type HTTP2Conn struct {
 	handler     *Handler
 	stream      io.ReadWriteCloser
 	contentType string
+
+	// Session entry reference (for clearing conn on close)
+	sessionEntry *http2SessionEntry
 
 	// Request tracking for concurrent requests
 	pendingReqs sync.Map // id (any) -> chan *Response
@@ -59,9 +78,46 @@ func NewHTTP2Server(rootObject Object, mimeTypes []string) *HTTP2Server {
 	}
 
 	return &HTTP2Server{
-		rootObject: rootObject,
-		mimeTypes:  mimeTypes,
+		rootObject:  rootObject,
+		mimeTypes:   mimeTypes,
+		sessions:    make(map[string]*http2SessionEntry),
+		cleanupDone: make(chan struct{}),
 	}
+}
+
+// getOrCreateSession retrieves an existing session or creates a new one.
+// If clientSessionID is provided and exists, reuses that session.
+// If there's an active connection for the session, it's closed (one connection per session).
+// Returns the session entry and whether it was an existing session.
+func (s *HTTP2Server) getOrCreateSession(clientSessionID string) (*http2SessionEntry, bool) {
+	s.sessionMutex.Lock()
+	defer s.sessionMutex.Unlock()
+
+	// Try to find existing session
+	if clientSessionID != "" {
+		if entry, ok := s.sessions[clientSessionID]; ok {
+			entry.mutex.Lock()
+			entry.lastAccessed = time.Now()
+			// Close old connection if exists (one connection per session)
+			if entry.conn != nil {
+				// Close asynchronously to avoid deadlock
+				oldConn := entry.conn
+				entry.conn = nil
+				go oldConn.Close()
+			}
+			entry.mutex.Unlock()
+			return entry, true
+		}
+	}
+
+	// Create new session
+	session := NewSession()
+	entry := &http2SessionEntry{
+		session:      session,
+		lastAccessed: time.Now(),
+	}
+	s.sessions[session.ID()] = entry
+	return entry, false
 }
 
 // ListenAndServe starts the HTTP/2 server on the given address with TLS.
@@ -97,12 +153,44 @@ func (s *HTTP2Server) ListenAndServeTLS(addr string, tlsConfig *tls.Config) erro
 		return fmt.Errorf("failed to configure HTTP/2: %w", err)
 	}
 
+	// Start session cleanup goroutine
+	go s.cleanupLoop()
+
 	// Start server with TLS
 	return s.server.ListenAndServeTLS("", "")
 }
 
-// Close stops the HTTP/2 server.
+// Close stops the HTTP/2 server and cleans up all sessions.
 func (s *HTTP2Server) Close() error {
+	// Stop cleanup goroutine
+	select {
+	case <-s.cleanupDone:
+		// Already closed
+	default:
+		close(s.cleanupDone)
+	}
+
+	// Collect connections to close (avoid deadlock with entry.mutex)
+	var connsToClose []*HTTP2Conn
+	s.sessionMutex.Lock()
+	for sessionID, entry := range s.sessions {
+		entry.mutex.Lock()
+		if entry.conn != nil {
+			connsToClose = append(connsToClose, entry.conn)
+			entry.conn = nil
+		}
+		entry.session.DisposeAll()
+		entry.mutex.Unlock()
+		delete(s.sessions, sessionID)
+	}
+	s.sessionMutex.Unlock()
+
+	// Close connections outside of locks to avoid deadlock
+	for _, conn := range connsToClose {
+		conn.Close()
+	}
+
+	// Shutdown HTTP server
 	if s.server != nil {
 		return s.server.Shutdown(context.Background())
 	}
@@ -111,7 +199,13 @@ func (s *HTTP2Server) Close() error {
 
 // ServeHTTP handles an incoming HTTP/2 stream connection.
 func (s *HTTP2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Only accept POST requests
+	// Handle DELETE method for session destruction
+	if r.Method == http.MethodDelete {
+		s.handleDeleteSession(w, r)
+		return
+	}
+
+	// Only accept POST requests for RPC
 	if r.Method != http.MethodPost {
 		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		return
@@ -142,9 +236,14 @@ func (s *HTTP2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Get or create session from RPC-Session-Id header
+	clientSessionID := r.Header.Get("RPC-Session-Id")
+	entry, _ := s.getOrCreateSession(clientSessionID)
+
 	// Set response headers for streaming
 	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Transfer-Encoding", "chunked")
+	w.Header().Set("RPC-Session-Id", entry.session.ID())
 	w.WriteHeader(http.StatusOK)
 
 	// Flush headers to establish stream
@@ -161,22 +260,115 @@ func (s *HTTP2Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// Create connection handler
 	ctx, cancel := context.WithCancel(r.Context())
 	conn := &HTTP2Conn{
-		session:     NewSession(),
-		handler:     nil, // Will be set below
-		stream:      stream,
-		contentType: contentType,
-		refPrefix:   generateConnID(),
-		writeChan:   make(chan MessageSetConvertible, 100),
-		closeChan:   make(chan struct{}),
-		ctx:         ctx,
-		cancel:      cancel,
+		session:      entry.session,
+		sessionEntry: entry,
+		handler:      nil, // Will be set below
+		stream:       stream,
+		contentType:  contentType,
+		refPrefix:    generateConnID(),
+		writeChan:    make(chan MessageSetConvertible, 100),
+		closeChan:    make(chan struct{}),
+		ctx:          ctx,
+		cancel:       cancel,
 	}
+
+	// Store connection reference in session entry
+	entry.mutex.Lock()
+	entry.conn = conn
+	entry.mutex.Unlock()
 
 	// Create handler with this connection as caller (for bidirectional RPC)
 	conn.handler = NewHandler(conn.session, s.rootObject, conn, s.mimeTypes)
 
 	// Handle the connection
 	conn.handle()
+}
+
+// handleDeleteSession handles DELETE requests to destroy a session.
+func (s *HTTP2Server) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	sessionID := r.Header.Get("RPC-Session-Id")
+	if sessionID == "" {
+		http.Error(w, "Missing RPC-Session-Id header", http.StatusBadRequest)
+		return
+	}
+
+	var connToClose *HTTP2Conn
+	s.sessionMutex.Lock()
+	if entry, ok := s.sessions[sessionID]; ok {
+		entry.mutex.Lock()
+		if entry.conn != nil {
+			connToClose = entry.conn
+			entry.conn = nil
+		}
+		entry.session.DisposeAll()
+		entry.mutex.Unlock()
+		delete(s.sessions, sessionID)
+	}
+	s.sessionMutex.Unlock()
+
+	// Close connection outside of locks to avoid deadlock
+	if connToClose != nil {
+		connToClose.Close()
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// cleanupLoop periodically removes expired sessions.
+func (s *HTTP2Server) cleanupLoop() {
+	ticker := time.NewTicker(SessionCleanupInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-s.cleanupDone:
+			return
+		case <-ticker.C:
+			s.cleanupExpiredSessions()
+		}
+	}
+}
+
+// cleanupExpiredSessions removes sessions that have exceeded their TTL.
+func (s *HTTP2Server) cleanupExpiredSessions() {
+	now := time.Now()
+
+	var connsToClose []*HTTP2Conn
+
+	s.sessionMutex.Lock()
+	for sessionID, entry := range s.sessions {
+		entry.mutex.Lock()
+
+		// Determine TTL based on whether session has refs
+		ttl := DefaultSessionTTL
+		if len(entry.session.ListLocalRefs()) == 0 {
+			// Sessions without refs expire faster
+			if StatelessSessionTTL < ttl {
+				ttl = StatelessSessionTTL
+			}
+		}
+
+		// Check if session is expired
+		if now.Sub(entry.lastAccessed) > ttl {
+			// Collect connection to close later (outside locks)
+			if entry.conn != nil {
+				connsToClose = append(connsToClose, entry.conn)
+				entry.conn = nil
+			}
+			// Dispose session
+			entry.session.DisposeAll()
+			entry.mutex.Unlock()
+			delete(s.sessions, sessionID)
+		} else {
+			entry.mutex.Unlock()
+		}
+	}
+	s.sessionMutex.Unlock()
+
+	// Close connections outside of locks to avoid deadlock
+	for _, conn := range connsToClose {
+		conn.Close()
+	}
 }
 
 // handle processes the HTTP/2 stream connection.
@@ -586,12 +778,23 @@ func (c *HTTP2Conn) GetSession() *Session {
 }
 
 // Close closes the connection.
+// Note: The session is NOT disposed - it persists for potential reconnection.
+// Session disposal happens via explicit DELETE or TTL expiration.
 func (c *HTTP2Conn) Close() error {
 	c.closeOnce.Do(func() {
 		c.cancel()
 		close(c.closeChan)
 		c.stream.Close()
-		c.session.DisposeAll()
+
+		// Clear connection reference in session entry (if we have one)
+		// The session itself is kept for potential reconnection
+		if c.sessionEntry != nil {
+			c.sessionEntry.mutex.Lock()
+			if c.sessionEntry.conn == c {
+				c.sessionEntry.conn = nil
+			}
+			c.sessionEntry.mutex.Unlock()
+		}
 
 		// Wake up all pending requests
 		c.pendingReqs.Range(func(key, value any) bool {

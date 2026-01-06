@@ -55,6 +55,7 @@ type HTTP2Client struct {
 // Options:
 //   - WithContentType(contentType) - specify encoding format
 //   - WithTLSConfig(tlsConfig) - customize TLS configuration
+//   - WithDialer(dialFunc) - custom dialer for Unix sockets or other transports
 func NewHTTP2Client(url string, rootObject Object, opts ...ClientOption) (*HTTP2Client, error) {
 	// Apply options with defaults
 	options := &clientOptions{
@@ -75,6 +76,7 @@ func newHTTP2Client(url string, rootObject Object, options *clientOptions) (*HTT
 	// Create HTTP/2 transport
 	transport := &http2.Transport{
 		TLSClientConfig: options.tlsConfig,
+		DialTLSContext:  options.dialTLSContext,
 	}
 
 	httpClient := &http.Client{
