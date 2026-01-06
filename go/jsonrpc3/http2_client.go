@@ -2,8 +2,10 @@ package jsonrpc3
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
@@ -56,6 +58,7 @@ type HTTP2Client struct {
 //   - WithContentType(contentType) - specify encoding format
 //   - WithTLSConfig(tlsConfig) - customize TLS configuration
 //   - WithDialer(dialFunc) - custom dialer for Unix sockets or other transports
+//   - WithH2C() - use HTTP/2 cleartext (no TLS), use "http://" URLs
 func NewHTTP2Client(url string, rootObject Object, opts ...ClientOption) (*HTTP2Client, error) {
 	// Apply options with defaults
 	options := &clientOptions{
@@ -77,6 +80,18 @@ func newHTTP2Client(url string, rootObject Object, options *clientOptions) (*HTT
 	transport := &http2.Transport{
 		TLSClientConfig: options.tlsConfig,
 		DialTLSContext:  options.dialTLSContext,
+	}
+
+	// Enable h2c (HTTP/2 cleartext) if requested
+	if options.h2c {
+		transport.AllowHTTP = true
+		// If no custom dialer provided, use a plain TCP dialer for h2c
+		if transport.DialTLSContext == nil {
+			transport.DialTLSContext = func(ctx context.Context, network, addr string, _ *tls.Config) (net.Conn, error) {
+				var d net.Dialer
+				return d.DialContext(ctx, network, addr)
+			}
+		}
 	}
 
 	httpClient := &http.Client{

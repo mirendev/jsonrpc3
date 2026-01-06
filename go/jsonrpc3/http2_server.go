@@ -5,12 +5,14 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"sync"
 	"sync/atomic"
 	"time"
 
 	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
 )
 
 // HTTP2Server represents an HTTP/2 server for JSON-RPC 3.0.
@@ -158,6 +160,45 @@ func (s *HTTP2Server) ListenAndServeTLS(addr string, tlsConfig *tls.Config) erro
 
 	// Start server with TLS
 	return s.server.ListenAndServeTLS("", "")
+}
+
+// ListenAndServeH2C starts the HTTP/2 server without TLS (h2c - HTTP/2 cleartext).
+// This is useful for Unix sockets or trusted internal networks where encryption is not needed.
+func (s *HTTP2Server) ListenAndServeH2C(addr string) error {
+	s.addr = addr
+
+	// Create h2c handler that wraps our handler
+	h2cHandler := h2c.NewHandler(s, &http2.Server{})
+
+	// Create HTTP server (no TLS)
+	s.server = &http.Server{
+		Addr:    addr,
+		Handler: h2cHandler,
+	}
+
+	// Start session cleanup goroutine
+	go s.cleanupLoop()
+
+	// Start server without TLS
+	return s.server.ListenAndServe()
+}
+
+// ServeH2C serves HTTP/2 cleartext on an existing listener.
+// This is useful for Unix socket listeners or custom network setups.
+func (s *HTTP2Server) ServeH2C(listener net.Listener) error {
+	// Create h2c handler that wraps our handler
+	h2cHandler := h2c.NewHandler(s, &http2.Server{})
+
+	// Create HTTP server (no TLS)
+	s.server = &http.Server{
+		Handler: h2cHandler,
+	}
+
+	// Start session cleanup goroutine
+	go s.cleanupLoop()
+
+	// Serve on the provided listener
+	return s.server.Serve(listener)
 }
 
 // Close stops the HTTP/2 server and cleans up all sessions.

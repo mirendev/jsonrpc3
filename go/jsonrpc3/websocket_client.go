@@ -56,6 +56,7 @@ type clientOptions struct {
 	tlsConfig      *tls.Config
 	headers        http.Header
 	dialTLSContext DialTLSContextFunc
+	h2c            bool // Use HTTP/2 cleartext (no TLS)
 }
 
 // ClientOption is a functional option for configuring a WebSocketClient.
@@ -124,6 +125,15 @@ func WithHeaders(headers http.Header) ClientOption {
 func WithDialer(dialTLSContext DialTLSContextFunc) ClientOption {
 	return func(o *clientOptions) {
 		o.dialTLSContext = dialTLSContext
+	}
+}
+
+// WithH2C enables HTTP/2 cleartext mode (no TLS).
+// This is useful for Unix sockets or trusted internal networks where encryption is not needed.
+// When using h2c, use "http://" URLs instead of "https://".
+func WithH2C() ClientOption {
+	return func(o *clientOptions) {
+		o.h2c = true
 	}
 }
 
